@@ -3,6 +3,11 @@ default: help
 # bingo manages consistent tooling versions for things like kind, kustomize, etc.
 include .bingo/Variables.mk
 
+# golangci-lint on *nix uses XDG_CACHE_HOME, falling back to HOME, as the default storage directory. Some CI setups
+# don't have XDG_CACHE_HOME set; in those cases, we set it here so lint functions correctly. This shouldn't
+# affect developers.
+export XDG_CACHE_HOME ?= /tmp/.local/cache
+
 ##@ General
 
 # The help target prints out all targets with their descriptions organized
