@@ -1,0 +1,14 @@
+apiVersion: operator.openshift.io/v1alpha1
+kind: OLM
+metadata:
+  name: cluster
+  annotations:
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+    release.openshift.io/create-only: "true"
+    release.openshift.io/feature-set: TechPreviewNoUpgrade
+spec:
+  managementState: Managed
+  logLevel: Normal
+  operatorLogLevel: Normal

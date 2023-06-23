@@ -70,7 +70,7 @@ spec:
             - --leader-elect
           command:
             - ./manager
-          image: quay.io/operator-framework/catalogd:devel
+          image: quay.io/operator-framework/catalogd:v0.3.0
           imagePullPolicy: IfNotPresent
           livenessProbe:
             httpGet:
