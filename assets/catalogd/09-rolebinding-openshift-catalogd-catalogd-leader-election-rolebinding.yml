@@ -1,0 +1,21 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: catalogd
+    app.kubernetes.io/instance: leader-election-rolebinding
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: rolebinding
+    app.kubernetes.io/part-of: catalogd
+  name: catalogd-leader-election-rolebinding
+  namespace: openshift-catalogd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: catalogd-leader-election-role
+subjects:
+  - kind: ServiceAccount
+    name: catalogd-controller-manager
+    namespace: openshift-catalogd
