@@ -6,12 +6,14 @@ import (
 	"os"
 
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
+	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/deploymentcontroller"
 	"github.com/openshift/library-go/pkg/operator/staticresourcecontroller"
 	"github.com/openshift/library-go/pkg/operator/status"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/component-base/cli"
@@ -85,28 +87,24 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		namespaces.Insert(obj.Namespace)
 	}
 
-	// TODO: not sure if we should include "" in this set. On one hand, we have some cluster-scoped resources
-	//   in our manifests. On the other, does this mean we're ALSO incidentally caching/watching all relevant
-	//   namespace-scoped resources cluster-wide?
-	kubeInformers := v1helpers.NewKubeInformersForNamespaces(cl.KubeClient, namespaces.UnsortedList()...)
+	cl.KubeInformersForNamespaces = v1helpers.NewKubeInformersForNamespaces(cl.KubeClient, namespaces.UnsortedList()...)
 
-	clientHolder := cl.ClientHolder().WithKubernetesInformers(kubeInformers)
-	c := staticresourcecontroller.NewStaticResourceController(
+	catalogdStaticResourceController := staticresourcecontroller.NewStaticResourceController(
 		"CatalogdStaticResources",
 		assets.ReadFile,
 		catalogdStaticFiles,
-		clientHolder,
+		cl.ClientHolder(),
 		cl.OperatorClient,
 		cc.EventRecorder.ForComponent("CatalogdStaticResources"),
-	).AddKubeInformers(kubeInformers)
+	).AddKubeInformers(cl.KubeInformersForNamespaces)
 
-	deploymentManifest, err := assets.ReadFile(catalogdDeployment)
+	catalogDeploymentManifest, err := assets.ReadFile(catalogdDeployment)
 	if err != nil {
 		return err
 	}
-	d := deploymentcontroller.NewDeploymentController(
+	catalogdDeploymentController := deploymentcontroller.NewDeploymentController(
 		"CatalogdControllerDeployment",
-		deploymentManifest,
+		catalogDeploymentManifest,
 		cc.EventRecorder.ForComponent("CatalogdControllerDeployment"),
 		cl.OperatorClient,
 		cl.KubeClient,
@@ -115,9 +113,10 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		nil,
 	)
 
-	// TODO: figure out how to correctly update the cluster operator operand versions
 	versionGetter := status.NewVersionGetter()
-	clusterOperatorCtrl := status.NewClusterOperatorStatusController(
+	versionGetter.SetVersion("operator", status.VersionForOperatorFromEnv())
+
+	clusterOperatorController := status.NewClusterOperatorStatusController(
 		"cluster-olm-operator",
 		catalogdRelatedObjects,
 		cl.ConfigClient.ConfigV1(),
@@ -127,21 +126,17 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		cc.EventRecorder.ForComponent("cluster-olm-operator"),
 	)
 
-	// TODO: consolidate this into a `clients.Clients.Start` method?
-	for _, s := range []func(<-chan struct{}){
-		cl.KubeInformerFactory.Start,
-		cl.ConfigInformerFactory.Start,
-		cl.OperatorClient.Informer().Run,
-		kubeInformers.Start,
-	} {
-		go s(ctx.Done())
-	}
+	cl.StartInformers(ctx)
 
-	// TODO: use a controller manager from "github.com/openshift/library-go/pkg/controller/manager"
-	for _, r := range []interface {
-		Run(context.Context, int)
-	}{c, d, clusterOperatorCtrl} {
-		go r.Run(ctx, 1)
+	for _, c := range []factory.Controller{
+		catalogdStaticResourceController,
+		catalogdDeploymentController,
+		clusterOperatorController,
+	} {
+		go func(c factory.Controller) {
+			defer runtime.HandleCrash()
+			c.Run(ctx, 1)
+		}(c)
 	}
 
 	<-ctx.Done()

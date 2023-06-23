@@ -32,14 +32,16 @@ import (
 const defaultResyncPeriod = 10 * time.Minute
 
 type Clients struct {
-	KubeClient            kubernetes.Interface
-	APIExtensionsClient   apiextensionsclient.Interface
-	DynamicClient         dynamic.Interface
-	RESTMapper            meta.RESTMapper
-	OperatorClient        v1helpers.OperatorClientWithFinalizers
-	ConfigClient          configclient.Interface
-	KubeInformerFactory   informers.SharedInformerFactory
-	ConfigInformerFactory configinformer.SharedInformerFactory
+	KubeClient                 kubernetes.Interface
+	APIExtensionsClient        apiextensionsclient.Interface
+	DynamicClient              dynamic.Interface
+	RESTMapper                 meta.RESTMapper
+	OperatorClient             *OperatorClient
+	OperatorInformers          operatorinformers.SharedInformerFactory
+	ConfigClient               configclient.Interface
+	KubeInformerFactory        informers.SharedInformerFactory
+	ConfigInformerFactory      configinformer.SharedInformerFactory
+	KubeInformersForNamespaces v1helpers.KubeInformersForNamespaces
 }
 
 func New(cc *controllercmd.ControllerContext) (*Clients, error) {
@@ -67,9 +69,16 @@ func New(cc *controllercmd.ControllerContext) (*Clients, error) {
 		return nil, err
 	}
 
-	opClient, err := NewOperatorClient(cc.KubeConfig)
+	operatorClientset, err := operatorclient.NewForConfig(cc.KubeConfig)
 	if err != nil {
 		return nil, err
+	}
+
+	operatorInformersFactory := operatorinformers.NewSharedInformerFactory(operatorClientset, defaultResyncPeriod)
+
+	opClient := &OperatorClient{
+		clientset: operatorClientset,
+		informers: operatorInformersFactory,
 	}
 
 	configClient, err := configclient.NewForConfig(cc.KubeConfig)
@@ -83,17 +92,31 @@ func New(cc *controllercmd.ControllerContext) (*Clients, error) {
 		DynamicClient:         dynClient,
 		RESTMapper:            rm,
 		OperatorClient:        opClient,
+		OperatorInformers:     operatorInformersFactory,
 		ConfigClient:          configClient,
 		KubeInformerFactory:   informers.NewSharedInformerFactory(kubeClient, defaultResyncPeriod),
 		ConfigInformerFactory: configinformer.NewSharedInformerFactory(configClient, defaultResyncPeriod),
 	}, nil
 }
 
+func (c *Clients) StartInformers(ctx context.Context) {
+	c.KubeInformerFactory.Start(ctx.Done())
+	c.ConfigInformerFactory.Start(ctx.Done())
+	c.OperatorInformers.Start(ctx.Done())
+	if c.KubeInformersForNamespaces != nil {
+		c.KubeInformersForNamespaces.Start(ctx.Done())
+	}
+}
+
 func (c *Clients) ClientHolder() *resourceapply.ClientHolder {
-	return resourceapply.NewClientHolder().
+	cl := resourceapply.NewClientHolder().
 		WithKubernetes(c.KubeClient).
 		WithDynamicClient(c.DynamicClient).
 		WithAPIExtensionsClient(c.APIExtensionsClient)
+	if c.KubeInformersForNamespaces != nil {
+		cl = cl.WithKubernetesInformers(c.KubeInformersForNamespaces)
+	}
+	return cl
 }
 
 func NewOperatorClient(config *rest.Config) (*OperatorClient, error) {
@@ -105,7 +128,7 @@ func NewOperatorClient(config *rest.Config) (*OperatorClient, error) {
 	factory := operatorinformers.NewSharedInformerFactory(client, defaultResyncPeriod)
 
 	return &OperatorClient{
-		client:    client,
+		clientset: client,
 		informers: factory,
 	}, nil
 }
@@ -118,7 +141,7 @@ const (
 )
 
 type OperatorClient struct {
-	client    operatorclient.Interface
+	clientset operatorclient.Interface
 	informers operatorinformers.SharedInformerFactory
 }
 
@@ -127,7 +150,7 @@ func (o OperatorClient) Informer() cache.SharedIndexInformer {
 }
 
 func (o OperatorClient) GetObjectMeta() (*metav1.ObjectMeta, error) {
-	olm, err := o.client.OperatorV1alpha1().OLMs().Get(context.TODO(), olmSingletonName, metav1.GetOptions{})
+	olm, err := o.clientset.OperatorV1alpha1().OLMs().Get(context.TODO(), olmSingletonName, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +174,7 @@ func (o OperatorClient) UpdateOperatorSpec(ctx context.Context, oldResourceVersi
 		},
 		Spec: operatorv1alpha1.OLMSpec{OperatorSpec: *in},
 	}
-	out, err := o.client.OperatorV1alpha1().OLMs().Update(ctx, olm, metav1.UpdateOptions{FieldManager: fieldManager})
+	out, err := o.clientset.OperatorV1alpha1().OLMs().Update(ctx, olm, metav1.UpdateOptions{FieldManager: fieldManager})
 	if err != nil {
 		return nil, "", err
 	}
@@ -166,7 +189,7 @@ func (o OperatorClient) UpdateOperatorStatus(ctx context.Context, oldResourceVer
 		},
 		Status: operatorv1alpha1.OLMStatus{OperatorStatus: *in},
 	}
-	out, err := o.client.OperatorV1alpha1().OLMs().UpdateStatus(ctx, olm, metav1.UpdateOptions{FieldManager: fieldManager})
+	out, err := o.clientset.OperatorV1alpha1().OLMs().UpdateStatus(ctx, olm, metav1.UpdateOptions{FieldManager: fieldManager})
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +202,7 @@ func (o OperatorClient) EnsureFinalizer(ctx context.Context, finalizer string) e
 	if err != nil {
 		return err
 	}
-	if _, err := o.client.OperatorV1alpha1().OLMs().Patch(ctx, olmSingletonName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: pointer.Bool(true)}); err != nil {
+	if _, err := o.clientset.OperatorV1alpha1().OLMs().Patch(ctx, olmSingletonName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: pointer.Bool(true)}); err != nil {
 		return err
 	}
 	return nil
@@ -193,7 +216,7 @@ func (o OperatorClient) RemoveFinalizer(ctx context.Context, finalizer string) e
 	newFinalizers := sets.List(sets.New(olm.GetFinalizers()...).Delete(finalizer))
 	olm.SetFinalizers(newFinalizers)
 
-	if _, err := o.client.OperatorV1alpha1().OLMs().Update(ctx, olm, metav1.UpdateOptions{FieldManager: fieldManager}); err != nil {
+	if _, err := o.clientset.OperatorV1alpha1().OLMs().Update(ctx, olm, metav1.UpdateOptions{FieldManager: fieldManager}); err != nil {
 		return err
 	}
 	return nil
