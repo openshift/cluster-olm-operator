@@ -35,7 +35,7 @@ func main() {
 func newRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cluster-olm-operator",
-		Short: "OpenShift cluster olm operator",
+		Short: "OpenShift Cluster OLM Operator",
 	}
 	cmd.AddCommand(newOperatorCommand())
 	return cmd
@@ -48,8 +48,8 @@ func newOperatorCommand() *cobra.Command {
 		version.Info{Major: "0", Minor: "0", GitVersion: "0.0.1"},
 		runOperator,
 	).NewCommandWithContext(context.Background())
-	cmd.Use = "operator"
-	cmd.Short = "Start the cluster olm operator"
+	cmd.Use = "start"
+	cmd.Short = "Start the Cluster OLM Operator"
 	return cmd
 }
 

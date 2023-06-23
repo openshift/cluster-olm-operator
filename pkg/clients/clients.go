@@ -3,6 +3,8 @@ package clients
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -18,6 +20,8 @@ import (
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/dynamic"
@@ -136,7 +140,7 @@ func NewOperatorClient(config *rest.Config) (*OperatorClient, error) {
 var _ v1helpers.OperatorClientWithFinalizers = &OperatorClient{}
 
 const (
-	olmSingletonName = "cluster"
+	globalConfigName = "cluster"
 	fieldManager     = "cluster-olm-operator"
 )
 
@@ -150,7 +154,7 @@ func (o OperatorClient) Informer() cache.SharedIndexInformer {
 }
 
 func (o OperatorClient) GetObjectMeta() (*metav1.ObjectMeta, error) {
-	olm, err := o.clientset.OperatorV1alpha1().OLMs().Get(context.TODO(), olmSingletonName, metav1.GetOptions{})
+	olm, err := o.clientset.OperatorV1alpha1().OLMs().Get(context.TODO(), globalConfigName, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -158,23 +162,22 @@ func (o OperatorClient) GetObjectMeta() (*metav1.ObjectMeta, error) {
 }
 
 func (o OperatorClient) GetOperatorState() (*operatorv1.OperatorSpec, *operatorv1.OperatorStatus, string, error) {
-	olm, err := o.informers.Operator().V1alpha1().OLMs().Lister().Get(olmSingletonName)
+	orig, err := o.informers.Operator().V1alpha1().OLMs().Lister().Get(globalConfigName)
 	if err != nil {
 		return nil, nil, "", err
 	}
 
+	olm := orig.DeepCopy()
 	return &olm.Spec.OperatorSpec, &olm.Status.OperatorStatus, olm.ResourceVersion, nil
 }
 
 func (o OperatorClient) UpdateOperatorSpec(ctx context.Context, oldResourceVersion string, in *operatorv1.OperatorSpec) (*operatorv1.OperatorSpec, string, error) {
-	olm := &operatorv1alpha1.OLM{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            olmSingletonName,
-			ResourceVersion: oldResourceVersion,
-		},
-		Spec: operatorv1alpha1.OLMSpec{OperatorSpec: *in},
+	patch, err := generateOLMPatch(oldResourceVersion, in, "spec")
+	if err != nil {
+		return nil, "", fmt.Errorf("generate patch: %v", err)
 	}
-	out, err := o.clientset.OperatorV1alpha1().OLMs().Update(ctx, olm, metav1.UpdateOptions{FieldManager: fieldManager})
+
+	out, err := o.clientset.OperatorV1alpha1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: pointer.Bool(true)})
 	if err != nil {
 		return nil, "", err
 	}
@@ -182,14 +185,12 @@ func (o OperatorClient) UpdateOperatorSpec(ctx context.Context, oldResourceVersi
 }
 
 func (o OperatorClient) UpdateOperatorStatus(ctx context.Context, oldResourceVersion string, in *operatorv1.OperatorStatus) (*operatorv1.OperatorStatus, error) {
-	olm := &operatorv1alpha1.OLM{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            olmSingletonName,
-			ResourceVersion: oldResourceVersion,
-		},
-		Status: operatorv1alpha1.OLMStatus{OperatorStatus: *in},
+	patch, err := generateOLMPatch(oldResourceVersion, in, "status")
+	if err != nil {
+		return nil, fmt.Errorf("generate patch: %v", err)
 	}
-	out, err := o.clientset.OperatorV1alpha1().OLMs().UpdateStatus(ctx, olm, metav1.UpdateOptions{FieldManager: fieldManager})
+
+	out, err := o.clientset.OperatorV1alpha1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: pointer.Bool(true)}, "status")
 	if err != nil {
 		return nil, err
 	}
@@ -197,19 +198,19 @@ func (o OperatorClient) UpdateOperatorStatus(ctx context.Context, oldResourceVer
 }
 
 func (o OperatorClient) EnsureFinalizer(ctx context.Context, finalizer string) error {
-	olm := operatorv1alpha1apply.OLM(olmSingletonName).WithFinalizers(finalizer)
+	olm := operatorv1alpha1apply.OLM(globalConfigName).WithFinalizers(finalizer)
 	patch, err := json.Marshal(olm)
 	if err != nil {
 		return err
 	}
-	if _, err := o.clientset.OperatorV1alpha1().OLMs().Patch(ctx, olmSingletonName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: pointer.Bool(true)}); err != nil {
+	if _, err := o.clientset.OperatorV1alpha1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: pointer.Bool(true)}); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (o OperatorClient) RemoveFinalizer(ctx context.Context, finalizer string) error {
-	olm, err := o.informers.Operator().V1alpha1().OLMs().Lister().Get(olmSingletonName)
+	olm, err := o.informers.Operator().V1alpha1().OLMs().Lister().Get(globalConfigName)
 	if err != nil {
 		return err
 	}
@@ -220,4 +221,17 @@ func (o OperatorClient) RemoveFinalizer(ctx context.Context, finalizer string) e
 		return err
 	}
 	return nil
+}
+
+func generateOLMPatch(resourceVersion string, in any, fieldPath ...string) ([]byte, error) {
+	var u unstructured.Unstructured
+	u.SetAPIVersion(schema.GroupVersion{Group: operatorv1alpha1.GroupName, Version: "v1alpha1"}.String())
+	u.SetKind("OLM")
+	u.SetResourceVersion(resourceVersion)
+
+	if err := unstructured.SetNestedField(u.Object, in, fieldPath...); err != nil {
+		return nil, fmt.Errorf("set %q: %v", strings.Join(fieldPath, "."), err)
+	}
+
+	return json.Marshal(u.Object)
 }

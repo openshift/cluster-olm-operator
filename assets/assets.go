@@ -2,6 +2,8 @@ package assets
 
 import (
 	"embed"
+	"errors"
+	"fmt"
 
 	configv1 "github.com/openshift/api/config/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -18,20 +20,24 @@ func ReadFile(name string) ([]byte, error) {
 }
 
 func RelatedObjects(rm meta.RESTMapper, files []string) ([]configv1.ObjectReference, error) {
+	var errs []error
 	relatedObjects := make([]configv1.ObjectReference, 0, len(files))
 	for _, f := range files {
 		data, err := ReadFile(f)
 		if err != nil {
-			return nil, err
+			errs = append(errs, err)
+			continue
 		}
 		var u unstructured.Unstructured
 		if err := yaml.Unmarshal(data, &u); err != nil {
-			return nil, err
+			errs = append(errs, fmt.Errorf("yaml unmarshal file %q: %v", f, err))
+			continue
 		}
 
 		m, err := rm.RESTMapping(u.GroupVersionKind().GroupKind(), u.GroupVersionKind().Version)
 		if err != nil {
-			return nil, err
+			errs = append(errs, fmt.Errorf("lookup rest mapping for file %q, gvk %v: %v", f, u.GroupVersionKind(), err))
+			continue
 		}
 		relatedObjects = append(relatedObjects, configv1.ObjectReference{
 			Group:     m.GroupVersionKind.Group,
@@ -39,6 +45,9 @@ func RelatedObjects(rm meta.RESTMapper, files []string) ([]configv1.ObjectRefere
 			Namespace: u.GetNamespace(),
 			Name:      u.GetName(),
 		})
+	}
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
 	}
 	return relatedObjects, nil
 }
