@@ -174,7 +174,7 @@ func (o OperatorClient) GetOperatorState() (*operatorv1.OperatorSpec, *operatorv
 func (o OperatorClient) UpdateOperatorSpec(ctx context.Context, oldResourceVersion string, in *operatorv1.OperatorSpec) (*operatorv1.OperatorSpec, string, error) {
 	patch, err := generateOLMPatch(oldResourceVersion, in, "spec")
 	if err != nil {
-		return nil, "", fmt.Errorf("generate patch: %v", err)
+		return nil, "", fmt.Errorf("error generating patch: %w", err)
 	}
 
 	out, err := o.clientset.OperatorV1alpha1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: pointer.Bool(true)})
@@ -187,7 +187,7 @@ func (o OperatorClient) UpdateOperatorSpec(ctx context.Context, oldResourceVersi
 func (o OperatorClient) UpdateOperatorStatus(ctx context.Context, oldResourceVersion string, in *operatorv1.OperatorStatus) (*operatorv1.OperatorStatus, error) {
 	patch, err := generateOLMPatch(oldResourceVersion, in, "status")
 	if err != nil {
-		return nil, fmt.Errorf("generate patch: %v", err)
+		return nil, fmt.Errorf("error generating patch: %w", err)
 	}
 
 	out, err := o.clientset.OperatorV1alpha1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: pointer.Bool(true)}, "status")
@@ -230,7 +230,7 @@ func generateOLMPatch(resourceVersion string, in any, fieldPath ...string) ([]by
 	u.SetResourceVersion(resourceVersion)
 
 	if err := unstructured.SetNestedField(u.Object, in, fieldPath...); err != nil {
-		return nil, fmt.Errorf("set %q: %v", strings.Join(fieldPath, "."), err)
+		return nil, fmt.Errorf("error setting %q: %w", strings.Join(fieldPath, "."), err)
 	}
 
 	return json.Marshal(u.Object)

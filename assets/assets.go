@@ -25,18 +25,18 @@ func RelatedObjects(rm meta.RESTMapper, files []string) ([]configv1.ObjectRefere
 	for _, f := range files {
 		data, err := ReadFile(f)
 		if err != nil {
-			errs = append(errs, err)
+			errs = append(errs, fmt.Errorf("error reading file %q: %w", f, err))
 			continue
 		}
 		var u unstructured.Unstructured
 		if err := yaml.Unmarshal(data, &u); err != nil {
-			errs = append(errs, fmt.Errorf("yaml unmarshal file %q: %v", f, err))
+			errs = append(errs, fmt.Errorf("error unmarshalling file %q: %w", f, err))
 			continue
 		}
 
 		m, err := rm.RESTMapping(u.GroupVersionKind().GroupKind(), u.GroupVersionKind().Version)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("lookup rest mapping for file %q, gvk %v: %v", f, u.GroupVersionKind(), err))
+			errs = append(errs, fmt.Errorf("error looking up RESTMapping for file %q, gvk %v: %w", f, u.GroupVersionKind(), err))
 			continue
 		}
 		relatedObjects = append(relatedObjects, configv1.ObjectReference{
