@@ -94,6 +94,36 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	}
 	operatorControllerDeployment := "operator-controller/11-deployment-openshift-operator-controller-operator-controller-controller-manager.yml"
 
+	rukpakStaticFiles := []string{
+		"rukpak/01-namespace--openshift-rukpak.yml",
+		"rukpak/02-customresourcedefinition--bundledeployments.core.rukpak.io.yml",
+		"rukpak/03-customresourcedefinition--bundles.core.rukpak.io.yml",
+		"rukpak/05-serviceaccount-openshift-rukpak-core-admin.yml",
+		"rukpak/06-serviceaccount-openshift-rukpak-helm-provisioner-admin.yml",
+		"rukpak/07-serviceaccount-openshift-rukpak-rukpak-webhooks-admin.yml",
+		"rukpak/08-clusterrole--bundle-reader.yml",
+		"rukpak/09-clusterrole--bundle-uploader.yml",
+		"rukpak/10-clusterrole--core-admin.yml",
+		"rukpak/12-clusterrole--helm-provisioner-admin.yml",
+		"rukpak/13-clusterrole--rukpak-webhooks-admin.yml",
+		"rukpak/14-clusterrolebinding--core-admin.yml",
+		"rukpak/16-clusterrolebinding--helm-provisioner-admin.yml",
+		"rukpak/17-clusterrolebinding--rukpak-webhooks-admin.yml",
+		"rukpak/19-service-openshift-rukpak-core.yml",
+		"rukpak/20-service-openshift-rukpak-helm-provisioner.yml",
+		"rukpak/21-service-openshift-rukpak-rukpak-webhook-service.yml",
+		"rukpak/36-validatingwebhookconfiguration--rukpak-validating-webhook-configuration.yml",
+	}
+	rukpakDeploymentFiles := map[string]string{
+		"Core":            "rukpak/23-deployment-openshift-rukpak-core.yml",
+		"HelmProvisioner": "rukpak/24-deployment-openshift-rukpak-helm-provisioner.yml",
+		"Webhooks":        "rukpak/25-deployment-openshift-rukpak-rukpak-webhooks.yml",
+	}
+	rukpakDeploymentFileNames := make([]string, 0, len(rukpakDeploymentFiles))
+	for _, file := range rukpakDeploymentFiles {
+		rukpakDeploymentFileNames = append(rukpakDeploymentFileNames, file)
+	}
+
 	catalogdRelatedObjects, err := assets.RelatedObjects(cl.RESTMapper, append(catalogdStaticFiles, catalogdDeployment))
 	if err != nil {
 		return err
@@ -104,7 +134,12 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		return err
 	}
 
-	relatedObjects := append(catalogdRelatedObjects, operatorControllerRelatedObjects...)
+	rukpakRelatedObjects, err := assets.RelatedObjects(cl.RESTMapper, append(rukpakStaticFiles, rukpakDeploymentFileNames...))
+	if err != nil {
+		return err
+	}
+
+	relatedObjects := append(append(catalogdRelatedObjects, operatorControllerRelatedObjects...), rukpakRelatedObjects...)
 
 	namespaces := sets.New[string]()
 	for _, obj := range relatedObjects {
@@ -167,6 +202,67 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		},
 	)
 
+	rukpakStaticResourceController := staticresourcecontroller.NewStaticResourceController(
+		"RukpakStaticResources",
+		assets.ReadFile,
+		rukpakStaticFiles,
+		cl.ClientHolder(),
+		cl.OperatorClient,
+		cc.EventRecorder.ForComponent("RukpakStaticResources"),
+	).AddKubeInformers(cl.KubeInformersForNamespaces)
+
+	rukpakCoreDeploymentManifest, err := assets.ReadFile(rukpakDeploymentFiles["Core"])
+	if err != nil {
+		return err
+	}
+	rukpakHelmProvisionerDeploymentManifest, err := assets.ReadFile(rukpakDeploymentFiles["HelmProvisioner"])
+	if err != nil {
+		return err
+	}
+	rukpakWebhooksDeploymentManifest, err := assets.ReadFile(rukpakDeploymentFiles["Webhooks"])
+	if err != nil {
+		return err
+	}
+
+	rukpakCoreDeploymentController := deploymentcontroller.NewDeploymentController(
+		"RukpakCoreControllerDeployment",
+		rukpakCoreDeploymentManifest,
+		cc.EventRecorder.ForComponent("RukpakCoreControllerDeployment"),
+		cl.OperatorClient,
+		cl.KubeClient,
+		cl.KubeInformerFactory.Apps().V1().Deployments(),
+		nil,
+		[]deploymentcontroller.ManifestHookFunc{
+			replaceImageHook("${RUKPAK_IMAGE}", "RUKPAK_IMAGE"),
+			replaceImageHook("${KUBE_RBAC_PROXY_IMAGE}", "KUBE_RBAC_PROXY_IMAGE"),
+		},
+	)
+	rukpakHelmProvisionerDeploymentController := deploymentcontroller.NewDeploymentController(
+		"RukpakHelmProvisionerControllerDeployment",
+		rukpakHelmProvisionerDeploymentManifest,
+		cc.EventRecorder.ForComponent("RukpakHelmProvisionerControllerDeployment"),
+		cl.OperatorClient,
+		cl.KubeClient,
+		cl.KubeInformerFactory.Apps().V1().Deployments(),
+		nil,
+		[]deploymentcontroller.ManifestHookFunc{
+			replaceImageHook("${RUKPAK_IMAGE}", "RUKPAK_IMAGE"),
+			replaceImageHook("${KUBE_RBAC_PROXY_IMAGE}", "KUBE_RBAC_PROXY_IMAGE"),
+		},
+	)
+	rukpakWebhooksDeploymentController := deploymentcontroller.NewDeploymentController(
+		"RukpakWebhooksControllerDeployment",
+		rukpakWebhooksDeploymentManifest,
+		cc.EventRecorder.ForComponent("RukpakWebhooksControllerDeployment"),
+		cl.OperatorClient,
+		cl.KubeClient,
+		cl.KubeInformerFactory.Apps().V1().Deployments(),
+		nil,
+		[]deploymentcontroller.ManifestHookFunc{
+			replaceImageHook("${RUKPAK_IMAGE}", "RUKPAK_IMAGE"),
+		},
+	)
+
 	versionGetter := status.NewVersionGetter()
 	versionGetter.SetVersion("operator", status.VersionForOperatorFromEnv())
 
@@ -187,6 +283,10 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		catalogdDeploymentController,
 		operatorControllerStaticResourceController,
 		operatorControllerDeploymentController,
+		rukpakStaticResourceController,
+		rukpakCoreDeploymentController,
+		rukpakHelmProvisionerDeploymentController,
+		rukpakWebhooksDeploymentController,
 		clusterOperatorController,
 	} {
 		go func(c factory.Controller) {

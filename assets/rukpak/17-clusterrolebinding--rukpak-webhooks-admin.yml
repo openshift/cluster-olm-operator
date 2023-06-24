@@ -1,0 +1,16 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  annotations:
+    release.openshift.io/feature-set: TechPreviewNoUpgrade
+  name: rukpak-webhooks-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: rukpak-webhooks-admin
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: rukpak-webhooks-admin
+    namespace: openshift-rukpak

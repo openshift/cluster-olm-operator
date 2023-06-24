@@ -1,0 +1,12 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  annotations:
+    release.openshift.io/feature-set: TechPreviewNoUpgrade
+  name: bundle-reader
+rules:
+  - nonResourceURLs:
+      - /bundles/*
+    verbs:
+      - get
