@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -229,7 +230,12 @@ func generateOLMPatch(resourceVersion string, in any, fieldPath ...string) ([]by
 	u.SetKind("OLM")
 	u.SetResourceVersion(resourceVersion)
 
-	if err := unstructured.SetNestedField(u.Object, in, fieldPath...); err != nil {
+	inUnstructured, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&in)
+	if err != nil {
+		return nil, fmt.Errorf("error converting to unstructured: %w", err)
+	}
+
+	if err := unstructured.SetNestedField(u.Object, inUnstructured, fieldPath...); err != nil {
 		return nil, fmt.Errorf("error setting %q: %w", strings.Join(fieldPath, "."), err)
 	}
 
