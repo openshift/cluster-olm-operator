@@ -199,11 +199,18 @@ func (o OperatorClient) UpdateOperatorStatus(ctx context.Context, oldResourceVer
 }
 
 func (o OperatorClient) EnsureFinalizer(ctx context.Context, finalizer string) error {
-	olm := operatorv1alpha1apply.OLM(globalConfigName).WithFinalizers(finalizer)
+	instance, err := o.informers.Operator().V1alpha1().OLMs().Lister().Get(globalConfigName)
+	if err != nil {
+		return err
+	}
+	newFinalizers := sets.List(sets.New(instance.GetFinalizers()...).Insert(finalizer))
+
+	olm := operatorv1alpha1apply.OLM(globalConfigName).WithFinalizers(newFinalizers...)
 	patch, err := json.Marshal(olm)
 	if err != nil {
 		return err
 	}
+
 	if _, err := o.clientset.OperatorV1alpha1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: pointer.Bool(true)}); err != nil {
 		return err
 	}
@@ -211,14 +218,19 @@ func (o OperatorClient) EnsureFinalizer(ctx context.Context, finalizer string) e
 }
 
 func (o OperatorClient) RemoveFinalizer(ctx context.Context, finalizer string) error {
-	olm, err := o.informers.Operator().V1alpha1().OLMs().Lister().Get(globalConfigName)
+	instance, err := o.informers.Operator().V1alpha1().OLMs().Lister().Get(globalConfigName)
 	if err != nil {
 		return err
 	}
-	newFinalizers := sets.List(sets.New(olm.GetFinalizers()...).Delete(finalizer))
-	olm.SetFinalizers(newFinalizers)
+	newFinalizers := sets.List(sets.New(instance.GetFinalizers()...).Delete(finalizer))
 
-	if _, err := o.clientset.OperatorV1alpha1().OLMs().Update(ctx, olm, metav1.UpdateOptions{FieldManager: fieldManager}); err != nil {
+	olm := operatorv1alpha1apply.OLM(globalConfigName).WithFinalizers(newFinalizers...)
+	patch, err := json.Marshal(olm)
+	if err != nil {
+		return err
+	}
+
+	if _, err := o.clientset.OperatorV1alpha1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: pointer.Bool(true)}); err != nil {
 		return err
 	}
 	return nil
