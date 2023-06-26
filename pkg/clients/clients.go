@@ -124,20 +124,6 @@ func (c *Clients) ClientHolder() *resourceapply.ClientHolder {
 	return cl
 }
 
-func NewOperatorClient(config *rest.Config) (*OperatorClient, error) {
-	client, err := operatorclient.NewForConfig(config)
-	if err != nil {
-		return nil, err
-	}
-
-	factory := operatorinformers.NewSharedInformerFactory(client, defaultResyncPeriod)
-
-	return &OperatorClient{
-		clientset: client,
-		informers: factory,
-	}, nil
-}
-
 var _ v1helpers.OperatorClientWithFinalizers = &OperatorClient{}
 
 const (
