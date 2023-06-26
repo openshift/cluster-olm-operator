@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: openshift-cluster-olm-operator
+  name: cluster-olm-operator
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
+    release.openshift.io/feature-set: TechPreviewNoUpgrade
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: cluster-olm-operator
+  template:
+    metadata:
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+      labels:
+        name: cluster-olm-operator
+    spec:
+      serviceAccountName: cluster-olm-operator
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: cluster-olm-operator
+        image: quay.io/openshift/origin-cluster-olm-operator:latest
+        terminationMessagePolicy: FallbackToLogsOnError
+        ports:
+        - containerPort: 8443
+          name: metrics
+        command:
+        - /cluster-olm-operator
+        args:
+        - start
+        - -v=2
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: OPERATOR_NAME
+          value: cluster-olm-operator
+        - name: KUBE_RBAC_PROXY_IMAGE
+          value: quay.io/openshift/origin-kube-rbac-proxy:latest
+        - name: CATALOGD_IMAGE
+          value: quay.io/openshift/origin-olm-catalogd:latest
+        resources:
+          requests:
+            cpu: 10m
+            memory: 20Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - mountPath: /var/run/secrets/serving-cert
+          name: cluster-olm-operator-serving-cert
+      volumes:
+      - name: cluster-olm-operator-serving-cert
+        secret:
+          secretName: cluster-olm-operator-serving-cert
+          optional: true
+      nodeSelector:
+        kubernetes.io/os: linux
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+      - effect: NoExecute
+        key: node.kubernetes.io/unreachable
+        operator: Exists
+        tolerationSeconds: 120
+      - effect: NoExecute
+        key: node.kubernetes.io/not-ready
+        operator: Exists
+        tolerationSeconds: 120
+      priorityClassName: system-cluster-critical

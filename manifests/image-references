@@ -1,0 +1,12 @@
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+spec:
+  tags:
+  - name: cluster-olm-operator
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-olm-storage-operator:latest
+  - name: olm-catalogd
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-olm-catalogd:latest
