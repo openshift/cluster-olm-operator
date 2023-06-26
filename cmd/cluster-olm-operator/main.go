@@ -4,7 +4,9 @@ import (
 	"context"
 	goflag "flag"
 	"os"
+	"strings"
 
+	operatorv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/deploymentcontroller"
@@ -110,7 +112,10 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		cl.KubeClient,
 		cl.KubeInformerFactory.Apps().V1().Deployments(),
 		nil,
-		nil,
+		[]deploymentcontroller.ManifestHookFunc{
+			replaceImageHook("${CATALOGD_IMAGE}", "CATALOGD_IMAGE"),
+			replaceImageHook("${KUBE_RBAC_PROXY_IMAGE}", "KUBE_RBAC_PROXY_IMAGE"),
+		},
 	)
 
 	versionGetter := status.NewVersionGetter()
@@ -141,4 +146,12 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 
 	<-ctx.Done()
 	return nil
+}
+
+func replaceImageHook(placeholder string, desiredImageEnvVar string) deploymentcontroller.ManifestHookFunc {
+	return func(spec *operatorv1.OperatorSpec, deployment []byte) ([]byte, error) {
+		replacer := strings.NewReplacer(placeholder, os.Getenv(desiredImageEnvVar))
+		newDeployment := replacer.Replace(string(deployment))
+		return []byte(newDeployment), nil
+	}
 }
