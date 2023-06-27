@@ -64,20 +64,21 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	catalogdStaticFiles := []string{
 		"catalogd/00-namespace-openshift-catalogd.yml",
 		"catalogd/01-customresourcedefinition-bundlemetadata.catalogd.operatorframework.io.yml",
-		"catalogd/02-customresourcedefinition-catalogs.catalogd.operatorframework.io.yml",
-		"catalogd/03-customresourcedefinition-packages.catalogd.operatorframework.io.yml",
-		"catalogd/04-serviceaccount-openshift-catalogd-catalogd-controller-manager.yml",
-		"catalogd/05-role-openshift-catalogd-catalogd-leader-election-role.yml",
-		"catalogd/06-clusterrole-catalogd-manager-role.yml",
-		"catalogd/07-clusterrole-catalogd-metrics-reader.yml",
-		"catalogd/08-clusterrole-catalogd-proxy-role.yml",
-		"catalogd/09-rolebinding-openshift-catalogd-catalogd-leader-election-rolebinding.yml",
-		"catalogd/10-clusterrolebinding-catalogd-manager-rolebinding.yml",
-		"catalogd/11-clusterrolebinding-catalogd-proxy-rolebinding.yml",
-		"catalogd/12-service-openshift-catalogd-catalogd-controller-manager-metrics-service.yml",
+		"catalogd/02-customresourcedefinition-catalogmetadata.catalogd.operatorframework.io.yml",
+		"catalogd/03-customresourcedefinition-catalogs.catalogd.operatorframework.io.yml",
+		"catalogd/04-customresourcedefinition-packages.catalogd.operatorframework.io.yml",
+		"catalogd/05-serviceaccount-openshift-catalogd-catalogd-controller-manager.yml",
+		"catalogd/06-role-openshift-catalogd-catalogd-leader-election-role.yml",
+		"catalogd/07-clusterrole-catalogd-manager-role.yml",
+		"catalogd/08-clusterrole-catalogd-metrics-reader.yml",
+		"catalogd/09-clusterrole-catalogd-proxy-role.yml",
+		"catalogd/10-rolebinding-openshift-catalogd-catalogd-leader-election-rolebinding.yml",
+		"catalogd/11-clusterrolebinding-catalogd-manager-rolebinding.yml",
+		"catalogd/12-clusterrolebinding-catalogd-proxy-rolebinding.yml",
+		"catalogd/13-service-openshift-catalogd-catalogd-controller-manager-metrics-service.yml",
 	}
 
-	catalogdDeployment := "catalogd/13-deployment-openshift-catalogd-catalogd-controller-manager.yml"
+	catalogdDeployment := "catalogd/14-deployment-openshift-catalogd-catalogd-controller-manager.yml"
 
 	catalogdRelatedObjects, err := assets.RelatedObjects(cl.RESTMapper, append(catalogdStaticFiles, catalogdDeployment))
 	if err != nil {
