@@ -1,0 +1,20 @@
+# Expose operator metrics
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: openshift-cluster-olm-operator
+  name: cluster-olm-operator-metrics
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
+    service.alpha.openshift.io/serving-cert-secret-name: cluster-olm-operator-serving-cert
+    release.openshift.io/feature-set: TechPreviewNoUpgrade
+spec:
+  ports:
+  - name: https
+    port: 443
+    protocol: TCP
+    targetPort: 8443
+  selector:
+    name: cluster-olm-operator
+  sessionAffinity: None
+  type: ClusterIP

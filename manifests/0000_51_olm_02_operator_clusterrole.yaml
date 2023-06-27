@@ -1,0 +1,165 @@
+# TODO(ncdc): consider moving everything outside of namespaces, crds, clusterroles, clusterrolebindings
+# into Roles/RoleBindings that are specific to the OLM component namespaces
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+    name: cluster-olm-operator
+    annotations:
+        include.release.openshift.io/self-managed-high-availability: "true"
+        release.openshift.io/feature-set: TechPreviewNoUpgrade
+rules:
+  - apiGroups:
+      - config.openshift.io
+    resources:
+      - infrastructures
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - update
+      - patch
+  - apiGroups:
+      - config.openshift.io
+    resources:
+      - clusteroperators
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - config.openshift.io
+    resources:
+      - clusteroperators
+      - clusteroperators/status
+    resourceNames:
+      - olm
+    verbs:
+      - update
+      - delete
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+      - update
+      - patch
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - namespaces
+      - services
+      - serviceaccounts
+    verbs:
+      - create
+      - update
+      - patch
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+    - apiextensions.k8s.io
+    resources:
+    - customresourcedefinitions
+    verbs:
+    - create
+    - update
+    - patch
+    - get
+    - list
+    - watch
+    - delete
+  - apiGroups:
+    - operator.openshift.io
+    resources:
+    - olms
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - operator.openshift.io
+    resources:
+    - olms
+    - olms/status
+    verbs:
+    - update
+    - patch
+    resourceNames:
+    - cluster
+  - apiGroups:
+    - apps
+    resources:
+    - replicasets
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - apps
+    resources:
+    - deployments
+    verbs:
+    - create
+    - update
+    - patch
+    - get
+    - list
+    - watch
+    - delete
+  - apiGroups:
+    - rbac.authorization.k8s.io
+    resources:
+    - roles
+    - rolebindings
+    - clusterroles
+    - clusterrolebindings
+    verbs:
+    - escalate
+    - create
+    - update
+    - patch
+    - get
+    - list
+    - watch
+    - delete
+  - apiGroups:
+    - rbac.authorization.k8s.io
+    resources:
+    - clusterroles
+    - roles
+    verbs:
+    - bind
+    resourceNames:
+    - catalogd-manager-role
+    - catalogd-metrics-reader
+    - catalogd-proxy-role
+    - catalogd-leader-election-role

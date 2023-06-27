@@ -1,3 +1,4 @@
+SHELL := /usr/bin/env bash
 default: help
 
 # bingo manages consistent tooling versions for things like kind, kustomize, etc.
