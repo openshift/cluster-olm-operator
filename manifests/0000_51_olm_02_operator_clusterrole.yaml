@@ -163,3 +163,7 @@ rules:
     - catalogd-metrics-reader
     - catalogd-proxy-role
     - catalogd-leader-election-role
+    - operator-controller-manager-role
+    - operator-controller-metrics-reader
+    - operator-controller-proxy-role
+    - operator-controller-leader-election-role

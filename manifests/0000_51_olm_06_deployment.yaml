@@ -43,6 +43,8 @@ spec:
           value: quay.io/openshift/origin-kube-rbac-proxy:latest
         - name: CATALOGD_IMAGE
           value: quay.io/openshift/origin-olm-catalogd:latest
+        - name: OPERATOR_CONTROLLER_IMAGE
+          value: quay.io/openshift/origin-olm-operator-controller:latest
         resources:
           requests:
             cpu: 10m

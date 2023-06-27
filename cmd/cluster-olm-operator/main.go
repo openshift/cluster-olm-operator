@@ -77,16 +77,37 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		"catalogd/12-clusterrolebinding-catalogd-proxy-rolebinding.yml",
 		"catalogd/13-service-openshift-catalogd-catalogd-controller-manager-metrics-service.yml",
 	}
-
 	catalogdDeployment := "catalogd/14-deployment-openshift-catalogd-catalogd-controller-manager.yml"
+
+	opConStaticFiles := []string{
+		"operator-controller/00-namespace-openshift-operator-controller.yml",
+		"operator-controller/01-customresourcedefinition-operators.operators.operatorframework.io.yml",
+		"operator-controller/02-serviceaccount-openshift-operator-controller-operator-controller-controller-manager.yml",
+		"operator-controller/03-role-openshift-operator-controller-operator-controller-leader-election-role.yml",
+		"operator-controller/04-clusterrole-operator-controller-manager-role.yml",
+		"operator-controller/05-clusterrole-operator-controller-metrics-reader.yml",
+		"operator-controller/06-clusterrole-operator-controller-proxy-role.yml",
+		"operator-controller/07-rolebinding-openshift-operator-controller-operator-controller-leader-election-rolebinding.yml",
+		"operator-controller/08-clusterrolebinding-operator-controller-manager-rolebinding.yml",
+		"operator-controller/09-clusterrolebinding-operator-controller-proxy-rolebinding.yml",
+		"operator-controller/10-service-openshift-operator-controller-operator-controller-controller-manager-metrics-service.yml",
+	}
+	opConDeployment := "operator-controller/11-deployment-openshift-operator-controller-operator-controller-controller-manager.yml"
 
 	catalogdRelatedObjects, err := assets.RelatedObjects(cl.RESTMapper, append(catalogdStaticFiles, catalogdDeployment))
 	if err != nil {
 		return err
 	}
 
+	opConRelatedObjects, err := assets.RelatedObjects(cl.RESTMapper, append(opConStaticFiles, opConDeployment))
+	if err != nil {
+		return err
+	}
+
+	relatedObjects := append(catalogdRelatedObjects, opConRelatedObjects...)
+
 	namespaces := sets.New[string]()
-	for _, obj := range catalogdRelatedObjects {
+	for _, obj := range relatedObjects {
 		namespaces.Insert(obj.Namespace)
 	}
 
@@ -119,12 +140,39 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		},
 	)
 
+	opConStaticResourceController := staticresourcecontroller.NewStaticResourceController(
+		"OperatorControllerStaticResources",
+		assets.ReadFile,
+		opConStaticFiles,
+		cl.ClientHolder(),
+		cl.OperatorClient,
+		cc.EventRecorder.ForComponent("OperatorControllerStaticResources"),
+	).AddKubeInformers(cl.KubeInformersForNamespaces)
+
+	opConDeploymentManifest, err := assets.ReadFile(opConDeployment)
+	if err != nil {
+		return err
+	}
+	opConDeploymentController := deploymentcontroller.NewDeploymentController(
+		"OperatorControllerDeployment",
+		opConDeploymentManifest,
+		cc.EventRecorder.ForComponent("OperatorControllerDeployment"),
+		cl.OperatorClient,
+		cl.KubeClient,
+		cl.KubeInformerFactory.Apps().V1().Deployments(),
+		nil,
+		[]deploymentcontroller.ManifestHookFunc{
+			replaceImageHook("${OPERATOR_CONTROLLER_IMAGE}", "OPERATOR_CONTROLLER_IMAGE"),
+			replaceImageHook("${KUBE_RBAC_PROXY_IMAGE}", "KUBE_RBAC_PROXY_IMAGE"),
+		},
+	)
+
 	versionGetter := status.NewVersionGetter()
 	versionGetter.SetVersion("operator", status.VersionForOperatorFromEnv())
 
 	clusterOperatorController := status.NewClusterOperatorStatusController(
 		"olm",
-		catalogdRelatedObjects,
+		relatedObjects,
 		cl.ConfigClient.ConfigV1(),
 		cl.ConfigInformerFactory.Config().V1().ClusterOperators(),
 		cl.OperatorClient,
@@ -137,6 +185,8 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	for _, c := range []factory.Controller{
 		catalogdStaticResourceController,
 		catalogdDeploymentController,
+		opConStaticResourceController,
+		opConDeploymentController,
 		clusterOperatorController,
 	} {
 		go func(c factory.Controller) {
