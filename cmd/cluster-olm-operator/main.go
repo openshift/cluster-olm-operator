@@ -122,13 +122,13 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	versionGetter.SetVersion("operator", status.VersionForOperatorFromEnv())
 
 	clusterOperatorController := status.NewClusterOperatorStatusController(
-		"cluster-olm-operator",
+		"olm",
 		catalogdRelatedObjects,
 		cl.ConfigClient.ConfigV1(),
 		cl.ConfigInformerFactory.Config().V1().ClusterOperators(),
 		cl.OperatorClient,
 		versionGetter,
-		cc.EventRecorder.ForComponent("cluster-olm-operator"),
+		cc.EventRecorder.ForComponent("olm"),
 	)
 
 	cl.StartInformers(ctx)
