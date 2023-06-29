@@ -17,12 +17,12 @@ import (
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/component-base/cli"
 	utilflag "k8s.io/component-base/cli/flag"
 
 	"github.com/openshift/cluster-olm-operator/assets"
 	"github.com/openshift/cluster-olm-operator/pkg/clients"
+	"github.com/openshift/cluster-olm-operator/pkg/version"
 )
 
 func main() {
@@ -46,8 +46,7 @@ func newRootCommand() *cobra.Command {
 func newOperatorCommand() *cobra.Command {
 	cmd := controllercmd.NewControllerCommandConfig(
 		"cluster-olm-operator",
-		// TODO: lookup the actual version
-		version.Info{Major: "0", Minor: "0", GitVersion: "0.0.1"},
+		version.Get(),
 		runOperator,
 	).NewCommandWithContext(context.Background())
 	cmd.Use = "start"
