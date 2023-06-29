@@ -4,7 +4,6 @@ kind: ValidatingWebhookConfiguration
 metadata:
   annotations:
     service.beta.openshift.io/inject-cabundle: "true"
-    release.openshift.io/feature-set: TechPreviewNoUpgrade
   name: rukpak-validating-webhook-configuration
 webhooks:
   - admissionReviewVersions:

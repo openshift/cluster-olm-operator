@@ -2,8 +2,6 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  annotations:
-    release.openshift.io/feature-set: TechPreviewNoUpgrade
   labels:
     app: webhooks
   name: rukpak-webhooks
@@ -15,15 +13,13 @@ spec:
       app: webhooks
   template:
     metadata:
-      annotations:
-        release.openshift.io/feature-set: TechPreviewNoUpgrade
       labels:
         app: webhooks
     spec:
       containers:
         - command:
             - /webhooks
-          image: quay.io/operator-framework/rukpak:v0.12.0
+          image: ${RUKPAK_IMAGE}
           imagePullPolicy: IfNotPresent
           name: webhooks
           ports:
@@ -44,6 +40,7 @@ spec:
             - mountPath: /tmp/k8s-webhook-server/serving-certs
               name: cert
               readOnly: true
+          args: []
       securityContext:
         runAsNonRoot: true
         seccompProfile:
