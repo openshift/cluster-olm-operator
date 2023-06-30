@@ -172,3 +172,15 @@ rules:
     - core-admin
     - helm-provisioner-admin
     - rukpak-webhooks-admin
+  - apiGroups:
+    - admissionregistration.k8s.io
+    resources:
+    - validatingwebhookconfigurations
+    verbs:
+    - create
+    - update
+    - patch
+    - get
+    - list
+    - watch
+    - delete
