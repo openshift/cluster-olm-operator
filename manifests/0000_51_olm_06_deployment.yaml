@@ -66,11 +66,8 @@ spec:
           optional: true
       nodeSelector:
         kubernetes.io/os: linux
-        node-role.kubernetes.io/control-plane: ""
+        node-role.kubernetes.io/master: ""
       tolerations:
-      - effect: NoSchedule
-        key: node-role.kubernetes.io/control-plane
-        operator: Exists
       - effect: NoSchedule
         key: node-role.kubernetes.io/master
         operator: Exists
