@@ -3,7 +3,7 @@ module github.com/openshift/cluster-olm-operator
 go 1.20
 
 require (
-	github.com/openshift/api v0.0.0-20230613151523-ba04973d3ed1
+	github.com/openshift/api v0.0.0-20230703162140-6e9853e4c905
 	github.com/openshift/build-machinery-go v0.0.0-20220913142420-e25cf57ea46d
 	github.com/openshift/client-go v0.0.0-20230503144108-75015d2347cb
 	github.com/openshift/library-go v0.0.0-20230622115850-9596e367bcb4
@@ -19,12 +19,8 @@ require (
 )
 
 // TODO: drop these replaces as soon as the OLM Operator API and client-go PRs merge:
-//    - openshift/api: https://github.com/openshift/api/pull/1504
 //    - openshift/client-go: <waiting on openshift/api PR to merge>
-replace (
-	github.com/openshift/api => github.com/joelanford/openshift-api v0.0.0-20230623000109-9ea4be9d5d37
-	github.com/openshift/client-go => github.com/joelanford/openshift-client-go v0.0.0-20230623015431-ff819c433917
-)
+replace github.com/openshift/client-go => github.com/joelanford/openshift-client-go v0.0.0-20230623015431-ff819c433917
 
 require (
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
