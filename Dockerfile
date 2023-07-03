@@ -9,5 +9,6 @@ COPY --from=builder /build/bin/cluster-olm-operator /
 
 USER 1001
 
-LABEL io.k8s.display-name="OpenShift Cluster Operator Lifecycle Manager (OLM) Operator" \
+LABEL io.openshift.release.operator=true \
+      io.k8s.display-name="OpenShift Cluster Operator Lifecycle Manager (OLM) Operator" \
       io.k8s.description="This cluster-olm-operator installs and maintains the Operator Lifecycle Manager (OLM) components of the OCP cluster."
