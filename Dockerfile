@@ -6,7 +6,7 @@ RUN make build
 FROM registry.ci.openshift.org/ocp/4.14:base
 
 COPY --from=builder /build/bin/cluster-olm-operator /
-
+COPY manifests /manifests
 USER 1001
 
 LABEL io.openshift.release.operator=true \
