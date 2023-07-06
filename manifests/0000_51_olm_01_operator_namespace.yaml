@@ -6,3 +6,5 @@ metadata:
     include.release.openshift.io/self-managed-high-availability: "true"
     workload.openshift.io/allowed: "management"
     release.openshift.io/feature-set: TechPreviewNoUpgrade
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
