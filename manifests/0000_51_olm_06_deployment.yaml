@@ -47,6 +47,8 @@ spec:
           value: quay.io/openshift/origin-olm-catalogd:latest
         - name: OPERATOR_CONTROLLER_IMAGE
           value: quay.io/openshift/origin-olm-operator-controller:latest
+        - name: RUKPAK_IMAGE
+          value: quay.io/openshift/origin-olm-rukpak:latest
         resources:
           requests:
             cpu: 10m
@@ -66,10 +68,10 @@ spec:
           optional: true
       nodeSelector:
         kubernetes.io/os: linux
-        node-role.kubernetes.io/control-plane: ""
+        node-role.kubernetes.io/master: ""
       tolerations:
       - effect: NoSchedule
-        key: node-role.kubernetes.io/control-plane
+        key: node-role.kubernetes.io/master
         operator: Exists
       - effect: NoExecute
         key: node.kubernetes.io/unreachable

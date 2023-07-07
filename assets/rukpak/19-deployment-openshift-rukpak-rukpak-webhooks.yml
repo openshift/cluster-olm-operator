@@ -1,0 +1,53 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: webhooks
+  name: rukpak-webhooks
+  namespace: openshift-rukpak
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webhooks
+  template:
+    metadata:
+      labels:
+        app: webhooks
+    spec:
+      containers:
+        - command:
+            - /webhooks
+          image: ${RUKPAK_IMAGE}
+          imagePullPolicy: IfNotPresent
+          name: webhooks
+          ports:
+            - containerPort: 8080
+            - containerPort: 9443
+              name: webhook-server
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 1m
+              memory: 15Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /tmp/k8s-webhook-server/serving-certs
+              name: cert
+              readOnly: true
+          args: []
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: rukpak-webhooks-admin
+      volumes:
+        - name: cert
+          secret:
+            defaultMode: 420
+            secretName: rukpak-webhook-certificate
