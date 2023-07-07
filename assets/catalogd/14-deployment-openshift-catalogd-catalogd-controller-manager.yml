@@ -53,9 +53,6 @@ spec:
               name: https
               protocol: TCP
           resources:
-            limits:
-              cpu: 500m
-              memory: 128Mi
             requests:
               cpu: 5m
               memory: 64Mi
@@ -87,9 +84,6 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           resources:
-            limits:
-              cpu: 1000m
-              memory: 1000Mi
             requests:
               cpu: 1000m
               memory: 200Mi
