@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	goflag "flag"
+	"fmt"
 	"os"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/deploymentcontroller"
+	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/staticresourcecontroller"
 	"github.com/openshift/library-go/pkg/operator/status"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
@@ -19,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/component-base/cli"
 	utilflag "k8s.io/component-base/cli/flag"
+	"k8s.io/klog/v2"
 
 	"github.com/openshift/cluster-olm-operator/assets"
 	"github.com/openshift/cluster-olm-operator/pkg/clients"
@@ -262,6 +265,22 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		},
 	)
 
+	upgradableConditionController := newStaticUpgradeableConditionController(
+		"OLMStaticUpgradeableConditionController",
+		cl.OperatorClient,
+		cc.EventRecorder.ForComponent("OLMStaticUpgradeableConditionController"),
+		[]string{
+			"CatalogdStaticResources",
+			"CatalogdControllerDeployment",
+			"OperatorControllerStaticResources",
+			"OperatorControllerDeployment",
+			"RukpakStaticResources",
+			"RukpakCoreControllerDeployment",
+			"RukpakHelmProvisionerControllerDeployment",
+			"RukpakWebhooksControllerDeployment",
+		},
+	)
+
 	versionGetter := status.NewVersionGetter()
 	versionGetter.SetVersion("operator", status.VersionForOperatorFromEnv())
 
@@ -286,6 +305,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		rukpakCoreDeploymentController,
 		rukpakHelmProvisionerDeploymentController,
 		rukpakWebhooksDeploymentController,
+		upgradableConditionController,
 		clusterOperatorController,
 	} {
 		go func(c factory.Controller) {
@@ -295,6 +315,50 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	}
 
 	<-ctx.Done()
+	return nil
+}
+
+func newStaticUpgradeableConditionController(name string, operatorClient *clients.OperatorClient, eventRecorder events.Recorder, prefixes []string) factory.Controller {
+	c := staticUpgradeableConditionController{
+		name:           name,
+		operatorClient: operatorClient,
+		prefixes:       prefixes,
+	}
+
+	return factory.New().WithSync(c.sync).WithSyncDegradedOnError(operatorClient).WithInformers(operatorClient.Informer()).ToController(name, eventRecorder)
+}
+
+type staticUpgradeableConditionController struct {
+	name           string
+	operatorClient *clients.OperatorClient
+	prefixes       []string
+}
+
+func (c staticUpgradeableConditionController) sync(ctx context.Context, _ factory.SyncContext) error {
+	logger := klog.FromContext(ctx).WithName(c.name)
+	logger.V(4).Info("sync started")
+	defer logger.V(4).Info("sync finished")
+
+	opSpec, _, _, err := c.operatorClient.GetOperatorState()
+	if err != nil {
+		return err
+	}
+	if opSpec.ManagementState != operatorv1.Managed {
+		return nil
+	}
+
+	updateStatusFuncs := make([]v1helpers.UpdateStatusFunc, 0, len(c.prefixes))
+	for _, prefix := range c.prefixes {
+		updateStatusFuncs = append(updateStatusFuncs, v1helpers.UpdateConditionFn(operatorv1.OperatorCondition{
+			Type:   fmt.Sprintf("%sUpgradeable", prefix),
+			Status: operatorv1.ConditionTrue,
+		}))
+	}
+
+	if _, _, updateErr := v1helpers.UpdateStatus(ctx, c.operatorClient, updateStatusFuncs...); updateErr != nil {
+		return updateErr
+	}
+
 	return nil
 }
 
