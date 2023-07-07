@@ -23,6 +23,7 @@ spec:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: manager
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
       labels:
         control-plane: controller-manager
     spec:
@@ -55,9 +56,6 @@ spec:
               name: https
               protocol: TCP
           resources:
-            limits:
-              cpu: 500m
-              memory: 128Mi
             requests:
               cpu: 5m
               memory: 64Mi
@@ -88,9 +86,6 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           resources:
-            limits:
-              cpu: 500m
-              memory: 128Mi
             requests:
               cpu: 10m
               memory: 64Mi
@@ -105,3 +100,4 @@ spec:
           type: RuntimeDefault
       serviceAccountName: operator-controller-controller-manager
       terminationGracePeriodSeconds: 10
+      priorityClassName: system-cluster-critical

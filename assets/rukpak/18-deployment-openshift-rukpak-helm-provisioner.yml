@@ -15,6 +15,7 @@ spec:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: manager
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
       labels:
         app: helm-provisioner
     spec:
@@ -80,6 +81,7 @@ spec:
             - mountPath: /etc/configmaps/ca-bundle
               name: ca-bundle
               readOnly: false
+      priorityClassName: system-cluster-critical
       securityContext:
         runAsNonRoot: true
         seccompProfile:
