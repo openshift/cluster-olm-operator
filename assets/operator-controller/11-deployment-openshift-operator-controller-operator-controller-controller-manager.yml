@@ -101,7 +101,5 @@ spec:
                 - ALL
       securityContext:
         runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
       serviceAccountName: operator-controller-controller-manager
       terminationGracePeriodSeconds: 10
