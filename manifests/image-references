@@ -1,0 +1,24 @@
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+spec:
+  tags:
+  - name: cluster-olm-operator
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-cluster-olm-operator:latest
+  - name: olm-catalogd
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-olm-catalogd:latest
+  - name: olm-operator-controller
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-olm-operator-controller:latest
+  - name: olm-rukpak
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-olm-rukpak:latest
+  - name: kube-rbac-proxy
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-kube-rbac-proxy:latest

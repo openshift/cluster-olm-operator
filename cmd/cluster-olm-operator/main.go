@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	goflag "flag"
+	"fmt"
 	"os"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/deploymentcontroller"
+	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/staticresourcecontroller"
 	"github.com/openshift/library-go/pkg/operator/status"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
@@ -19,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/component-base/cli"
 	utilflag "k8s.io/component-base/cli/flag"
+	"k8s.io/klog/v2"
 
 	"github.com/openshift/cluster-olm-operator/assets"
 	"github.com/openshift/cluster-olm-operator/pkg/clients"
@@ -93,6 +96,36 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	}
 	operatorControllerDeployment := "operator-controller/11-deployment-openshift-operator-controller-operator-controller-controller-manager.yml"
 
+	rukpakStaticFiles := []string{
+		"rukpak/00-namespace--openshift-rukpak.yml",
+		"rukpak/01-customresourcedefinition--bundledeployments.core.rukpak.io.yml",
+		"rukpak/02-customresourcedefinition--bundles.core.rukpak.io.yml",
+		"rukpak/03-serviceaccount-openshift-rukpak-core-admin.yml",
+		"rukpak/04-serviceaccount-openshift-rukpak-helm-provisioner-admin.yml",
+		"rukpak/05-serviceaccount-openshift-rukpak-rukpak-webhooks-admin.yml",
+		"rukpak/06-clusterrole--bundle-reader.yml",
+		"rukpak/07-clusterrole--bundle-uploader.yml",
+		"rukpak/08-clusterrole--core-admin.yml",
+		"rukpak/09-clusterrole--helm-provisioner-admin.yml",
+		"rukpak/10-clusterrole--rukpak-webhooks-admin.yml",
+		"rukpak/11-clusterrolebinding--core-admin.yml",
+		"rukpak/12-clusterrolebinding--helm-provisioner-admin.yml",
+		"rukpak/13-clusterrolebinding--rukpak-webhooks-admin.yml",
+		"rukpak/14-service-openshift-rukpak-core.yml",
+		"rukpak/15-service-openshift-rukpak-helm-provisioner.yml",
+		"rukpak/16-service-openshift-rukpak-rukpak-webhook-service.yml",
+		"rukpak/20-validatingwebhookconfiguration--rukpak-validating-webhook-configuration.yml",
+	}
+	rukpakDeploymentFiles := map[string]string{
+		"Core":            "rukpak/17-deployment-openshift-rukpak-core.yml",
+		"HelmProvisioner": "rukpak/18-deployment-openshift-rukpak-helm-provisioner.yml",
+		"Webhooks":        "rukpak/19-deployment-openshift-rukpak-rukpak-webhooks.yml",
+	}
+	rukpakDeploymentFileNames := make([]string, 0, len(rukpakDeploymentFiles))
+	for _, file := range rukpakDeploymentFiles {
+		rukpakDeploymentFileNames = append(rukpakDeploymentFileNames, file)
+	}
+
 	catalogdRelatedObjects, err := assets.RelatedObjects(cl.RESTMapper, append(catalogdStaticFiles, catalogdDeployment))
 	if err != nil {
 		return err
@@ -103,7 +136,12 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		return err
 	}
 
-	relatedObjects := append(catalogdRelatedObjects, operatorControllerRelatedObjects...)
+	rukpakRelatedObjects, err := assets.RelatedObjects(cl.RESTMapper, append(rukpakStaticFiles, rukpakDeploymentFileNames...))
+	if err != nil {
+		return err
+	}
+
+	relatedObjects := append(append(catalogdRelatedObjects, operatorControllerRelatedObjects...), rukpakRelatedObjects...)
 
 	namespaces := sets.New[string]()
 	for _, obj := range relatedObjects {
@@ -166,6 +204,83 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		},
 	)
 
+	rukpakStaticResourceController := staticresourcecontroller.NewStaticResourceController(
+		"RukpakStaticResources",
+		assets.ReadFile,
+		rukpakStaticFiles,
+		cl.ClientHolder(),
+		cl.OperatorClient,
+		cc.EventRecorder.ForComponent("RukpakStaticResources"),
+	).AddKubeInformers(cl.KubeInformersForNamespaces)
+
+	rukpakCoreDeploymentManifest, err := assets.ReadFile(rukpakDeploymentFiles["Core"])
+	if err != nil {
+		return err
+	}
+	rukpakHelmProvisionerDeploymentManifest, err := assets.ReadFile(rukpakDeploymentFiles["HelmProvisioner"])
+	if err != nil {
+		return err
+	}
+	rukpakWebhooksDeploymentManifest, err := assets.ReadFile(rukpakDeploymentFiles["Webhooks"])
+	if err != nil {
+		return err
+	}
+
+	rukpakCoreDeploymentController := deploymentcontroller.NewDeploymentController(
+		"RukpakCoreControllerDeployment",
+		rukpakCoreDeploymentManifest,
+		cc.EventRecorder.ForComponent("RukpakCoreControllerDeployment"),
+		cl.OperatorClient,
+		cl.KubeClient,
+		cl.KubeInformerFactory.Apps().V1().Deployments(),
+		nil,
+		[]deploymentcontroller.ManifestHookFunc{
+			replaceImageHook("${RUKPAK_IMAGE}", "RUKPAK_IMAGE"),
+			replaceImageHook("${KUBE_RBAC_PROXY_IMAGE}", "KUBE_RBAC_PROXY_IMAGE"),
+		},
+	)
+	rukpakHelmProvisionerDeploymentController := deploymentcontroller.NewDeploymentController(
+		"RukpakHelmProvisionerControllerDeployment",
+		rukpakHelmProvisionerDeploymentManifest,
+		cc.EventRecorder.ForComponent("RukpakHelmProvisionerControllerDeployment"),
+		cl.OperatorClient,
+		cl.KubeClient,
+		cl.KubeInformerFactory.Apps().V1().Deployments(),
+		nil,
+		[]deploymentcontroller.ManifestHookFunc{
+			replaceImageHook("${RUKPAK_IMAGE}", "RUKPAK_IMAGE"),
+			replaceImageHook("${KUBE_RBAC_PROXY_IMAGE}", "KUBE_RBAC_PROXY_IMAGE"),
+		},
+	)
+	rukpakWebhooksDeploymentController := deploymentcontroller.NewDeploymentController(
+		"RukpakWebhooksControllerDeployment",
+		rukpakWebhooksDeploymentManifest,
+		cc.EventRecorder.ForComponent("RukpakWebhooksControllerDeployment"),
+		cl.OperatorClient,
+		cl.KubeClient,
+		cl.KubeInformerFactory.Apps().V1().Deployments(),
+		nil,
+		[]deploymentcontroller.ManifestHookFunc{
+			replaceImageHook("${RUKPAK_IMAGE}", "RUKPAK_IMAGE"),
+		},
+	)
+
+	upgradableConditionController := newStaticUpgradeableConditionController(
+		"OLMStaticUpgradeableConditionController",
+		cl.OperatorClient,
+		cc.EventRecorder.ForComponent("OLMStaticUpgradeableConditionController"),
+		[]string{
+			"CatalogdStaticResources",
+			"CatalogdControllerDeployment",
+			"OperatorControllerStaticResources",
+			"OperatorControllerDeployment",
+			"RukpakStaticResources",
+			"RukpakCoreControllerDeployment",
+			"RukpakHelmProvisionerControllerDeployment",
+			"RukpakWebhooksControllerDeployment",
+		},
+	)
+
 	versionGetter := status.NewVersionGetter()
 	versionGetter.SetVersion("operator", status.VersionForOperatorFromEnv())
 
@@ -186,6 +301,11 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		catalogdDeploymentController,
 		operatorControllerStaticResourceController,
 		operatorControllerDeploymentController,
+		rukpakStaticResourceController,
+		rukpakCoreDeploymentController,
+		rukpakHelmProvisionerDeploymentController,
+		rukpakWebhooksDeploymentController,
+		upgradableConditionController,
 		clusterOperatorController,
 	} {
 		go func(c factory.Controller) {
@@ -195,6 +315,50 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	}
 
 	<-ctx.Done()
+	return nil
+}
+
+func newStaticUpgradeableConditionController(name string, operatorClient *clients.OperatorClient, eventRecorder events.Recorder, prefixes []string) factory.Controller {
+	c := staticUpgradeableConditionController{
+		name:           name,
+		operatorClient: operatorClient,
+		prefixes:       prefixes,
+	}
+
+	return factory.New().WithSync(c.sync).WithSyncDegradedOnError(operatorClient).WithInformers(operatorClient.Informer()).ToController(name, eventRecorder)
+}
+
+type staticUpgradeableConditionController struct {
+	name           string
+	operatorClient *clients.OperatorClient
+	prefixes       []string
+}
+
+func (c staticUpgradeableConditionController) sync(ctx context.Context, _ factory.SyncContext) error {
+	logger := klog.FromContext(ctx).WithName(c.name)
+	logger.V(4).Info("sync started")
+	defer logger.V(4).Info("sync finished")
+
+	opSpec, _, _, err := c.operatorClient.GetOperatorState()
+	if err != nil {
+		return err
+	}
+	if opSpec.ManagementState != operatorv1.Managed {
+		return nil
+	}
+
+	updateStatusFuncs := make([]v1helpers.UpdateStatusFunc, 0, len(c.prefixes))
+	for _, prefix := range c.prefixes {
+		updateStatusFuncs = append(updateStatusFuncs, v1helpers.UpdateConditionFn(operatorv1.OperatorCondition{
+			Type:   fmt.Sprintf("%sUpgradeable", prefix),
+			Status: operatorv1.ConditionTrue,
+		}))
+	}
+
+	if _, _, updateErr := v1helpers.UpdateStatus(ctx, c.operatorClient, updateStatusFuncs...); updateErr != nil {
+		return updateErr
+	}
+
 	return nil
 }
 
