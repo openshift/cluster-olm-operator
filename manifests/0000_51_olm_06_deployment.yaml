@@ -23,6 +23,40 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        - name: copy-catalogd-manifests
+          image: quay.io/openshift/origin-olm-catalogd:latest
+          imagePullPolicy: IfNotPresent
+          command:
+          - /bin/sh
+          args:
+          - -c
+          - cp -a /openshift/manifests /operand-assets/catalogd
+          volumeMounts:
+            - mountPath: /operand-assets
+              name: operand-assets
+        - name: copy-operator-controller-manifests
+          image: quay.io/openshift/origin-olm-operator-controller:latest
+          imagePullPolicy: IfNotPresent
+          command:
+          - /bin/sh
+          args:
+          - -c
+          - cp -a /openshift/manifests /operand-assets/operator-controller
+          volumeMounts:
+          - mountPath: /operand-assets
+            name: operand-assets
+        - name: copy-rukpak-manifests
+          image: quay.io/openshift/origin-olm-rukpak:latest
+          imagePullPolicy: IfNotPresent
+          command:
+          - /bin/sh
+          args:
+          - -c
+          - cp -a /openshift/manifests /operand-assets/rukpak
+          volumeMounts:
+          - mountPath: /operand-assets
+            name: operand-assets
       containers:
       - name: cluster-olm-operator
         image: quay.io/openshift/origin-cluster-olm-operator:latest
@@ -61,11 +95,15 @@ spec:
         volumeMounts:
         - mountPath: /var/run/secrets/serving-cert
           name: cluster-olm-operator-serving-cert
+        - mountPath: /operand-assets
+          name: operand-assets
       volumes:
       - name: cluster-olm-operator-serving-cert
         secret:
           secretName: cluster-olm-operator-serving-cert
           optional: true
+      - name: operand-assets
+        emptyDir: {}
       nodeSelector:
         kubernetes.io/os: linux
         node-role.kubernetes.io/master: ""
