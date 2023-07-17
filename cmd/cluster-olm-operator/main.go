@@ -32,7 +32,6 @@ import (
 	utilflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
 
-	"github.com/openshift/cluster-olm-operator/assets"
 	"github.com/openshift/cluster-olm-operator/pkg/clients"
 	"github.com/openshift/cluster-olm-operator/pkg/version"
 )
@@ -73,7 +72,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	}
 
 	cb := controllerBuilder{
-		assetsFS: assets.FS,
+		assetsFS: os.DirFS("/operand-assets"),
 		cl:       cl,
 		cc:       cc,
 	}
