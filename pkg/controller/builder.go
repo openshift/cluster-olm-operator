@@ -131,7 +131,7 @@ type object interface {
 func controllerNameForObject(prefix string, obj object) string {
 	titler := cases.Title(language.English)
 	return fmt.Sprintf("%s%s%s",
-		prefix,
+		strings.ReplaceAll(titler.String(prefix), "-", ""),
 		obj.GetObjectKind().GroupVersionKind().Kind,
 		strings.ReplaceAll(titler.String(obj.GetName()), "-", ""),
 	)
