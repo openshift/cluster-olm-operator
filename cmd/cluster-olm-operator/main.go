@@ -5,6 +5,7 @@ import (
 	goflag "flag"
 	"os"
 
+	_ "github.com/openshift/api/operator/v1alpha1/zz_generated.crd-manifests"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/status"

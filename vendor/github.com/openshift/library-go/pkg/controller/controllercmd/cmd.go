@@ -3,7 +3,6 @@ package controllercmd
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -45,6 +44,9 @@ type ControllerCommandConfig struct {
 	// DisableServing disables serving metrics, debug and health checks and so on.
 	DisableServing bool
 
+	// Allow enabling HTTP2
+	EnableHTTP2 bool
+
 	// DisableLeaderElection allows leader election to be suspended
 	DisableLeaderElection bool
 
@@ -60,6 +62,9 @@ type ControllerCommandConfig struct {
 	// RetryPeriod is the duration the LeaderElector clients should wait
 	// between tries of actions.
 	RetryPeriod metav1.Duration
+
+	// TopologyDetector is used to plug in topology detection.
+	TopologyDetector TopologyDetector
 
 	ComponentOwnerReference *corev1.ObjectReference
 	healthChecks            []healthz.HealthChecker
@@ -88,6 +93,11 @@ func (c *ControllerCommandConfig) WithComponentOwnerReference(reference *corev1.
 
 func (c *ControllerCommandConfig) WithHealthChecks(healthChecks ...healthz.HealthChecker) *ControllerCommandConfig {
 	c.healthChecks = append(c.healthChecks, healthChecks...)
+	return c
+}
+
+func (c *ControllerCommandConfig) WithTopologyDetector(topologyDetector TopologyDetector) *ControllerCommandConfig {
+	c.TopologyDetector = topologyDetector
 	return c
 }
 
@@ -139,7 +149,7 @@ func (c *ControllerCommandConfig) NewCommandWithContext(ctx context.Context) *co
 				}
 				files := map[string][]byte{}
 				for _, fn := range c.basicFlags.TerminateOnFiles {
-					fileBytes, err := ioutil.ReadFile(fn)
+					fileBytes, err := os.ReadFile(fn)
 					if err != nil {
 						klog.Warningf("Unable to read initial content of %q: %v", fn, err)
 						continue // intentionally ignore errors
@@ -237,7 +247,7 @@ func (c *ControllerCommandConfig) AddDefaultRotationToConfig(config *operatorv1a
 			startingFileContent[filepath.Join(certDir, "tls.crt")] = []byte{}
 			startingFileContent[filepath.Join(certDir, "tls.key")] = []byte{}
 
-			temporaryCertDir, err := ioutil.TempDir("", "serving-cert-")
+			temporaryCertDir, err := os.MkdirTemp("", "serving-cert-")
 			if err != nil {
 				return nil, nil, err
 			}
@@ -257,7 +267,7 @@ func (c *ControllerCommandConfig) AddDefaultRotationToConfig(config *operatorv1a
 			config.ServingInfo.CertFile = filepath.Join(temporaryCertDir, "tls.crt")
 			config.ServingInfo.KeyFile = filepath.Join(temporaryCertDir, "tls.key")
 			// nothing can trust this, so we don't really care about hostnames
-			servingCert, err := ca.MakeServerCert(sets.NewString("localhost"), 30)
+			servingCert, err := ca.MakeServerCert(sets.New("localhost"), 30)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -314,6 +324,13 @@ func (c *ControllerCommandConfig) StartController(ctx context.Context) error {
 
 	if !c.DisableServing {
 		builder = builder.WithServer(config.ServingInfo, config.Authentication, config.Authorization)
+		if c.EnableHTTP2 {
+			builder = builder.WithHTTP2()
+		}
+	}
+
+	if c.TopologyDetector != nil {
+		builder = builder.WithTopologyDetector(c.TopologyDetector)
 	}
 
 	return builder.Run(controllerCtx, unstructuredConfig)

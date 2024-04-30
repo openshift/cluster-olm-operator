@@ -224,6 +224,15 @@ func (AzureMachineProviderStatus) SwaggerDoc() map[string]string {
 	return map_AzureMachineProviderStatus
 }
 
+var map_ConfidentialVM = map[string]string{
+	"":             "ConfidentialVM defines the UEFI settings for the virtual machine.",
+	"uefiSettings": "uefiSettings specifies the security settings like secure boot and vTPM used while creating the virtual machine.",
+}
+
+func (ConfidentialVM) SwaggerDoc() map[string]string {
+	return map_ConfidentialVM
+}
+
 var map_DataDisk = map[string]string{
 	"":               "DataDisk specifies the parameters that are used to add one or more data disks to the machine. A Data Disk is a managed disk that's attached to a virtual machine to store application data. It differs from an OS Disk as it doesn't come with a pre-installed OS, and it cannot contain the boot volume. It is registered as SCSI drive and labeled with the chosen `lun`. e.g. for `lun: 0` the raw disk device will be available at `/dev/disk/azure/scsi1/lun0`.\n\nAs the Data Disk disk device is attached raw to the virtual machine, it will need to be partitioned, formatted with a filesystem and mounted, in order for it to be usable. This can be done by creating a custom userdata Secret with custom Ignition configuration to achieve the desired initialization. At this stage the previously defined `lun` is to be used as the \"device\" key for referencing the raw disk device to be initialized. Once the custom userdata Secret has been created, it can be referenced in the Machine's `.providerSpec.userDataSecret`. For further guidance and examples, please refer to the official OpenShift docs.",
 	"nameSuffix":     "NameSuffix is the suffix to be appended to the machine name to generate the disk name. Each disk name will be in format <machineName>_<nameSuffix>. NameSuffix name must start and finish with an alphanumeric character and can only contain letters, numbers, underscores, periods or hyphens. The overall disk name must not exceed 80 chars in length.",
@@ -296,6 +305,7 @@ var map_OSDiskManagedDiskParameters = map[string]string{
 	"":                   "OSDiskManagedDiskParameters is the parameters of a OSDisk managed disk.",
 	"storageAccountType": "StorageAccountType is the storage account type to use. Possible values include \"Standard_LRS\", \"Premium_LRS\".",
 	"diskEncryptionSet":  "DiskEncryptionSet is the disk encryption set properties",
+	"securityProfile":    "securityProfile specifies the security profile for the managed disk.",
 }
 
 func (OSDiskManagedDiskParameters) SwaggerDoc() map[string]string {
@@ -304,11 +314,23 @@ func (OSDiskManagedDiskParameters) SwaggerDoc() map[string]string {
 
 var map_SecurityProfile = map[string]string{
 	"":                 "SecurityProfile specifies the Security profile settings for a virtual machine or virtual machine scale set.",
-	"encryptionAtHost": "This field indicates whether Host Encryption should be enabled or disabled for a virtual machine or virtual machine scale set. Default is disabled.",
+	"encryptionAtHost": "encryptionAtHost indicates whether Host Encryption should be enabled or disabled for a virtual machine or virtual machine scale set. This should be disabled when SecurityEncryptionType is set to DiskWithVMGuestState. Default is disabled.",
+	"settings":         "settings specify the security type and the UEFI settings of the virtual machine. This field can be set for Confidential VMs and Trusted Launch for VMs.",
 }
 
 func (SecurityProfile) SwaggerDoc() map[string]string {
 	return map_SecurityProfile
+}
+
+var map_SecuritySettings = map[string]string{
+	"":               "SecuritySettings define the security type and the UEFI settings of the virtual machine.",
+	"securityType":   "securityType specifies the SecurityType of the virtual machine. It has to be set to any specified value to enable UEFISettings. The default behavior is: UEFISettings will not be enabled unless this property is set.",
+	"confidentialVM": "confidentialVM specifies the security configuration of the virtual machine. For more information regarding Confidential VMs, please refer to: https://learn.microsoft.com/azure/confidential-computing/confidential-vm-overview",
+	"trustedLaunch":  "trustedLaunch specifies the security configuration of the virtual machine. For more information regarding TrustedLaunch for VMs, please refer to: https://learn.microsoft.com/azure/virtual-machines/trusted-launch",
+}
+
+func (SecuritySettings) SwaggerDoc() map[string]string {
+	return map_SecuritySettings
 }
 
 var map_SpotVMOptions = map[string]string{
@@ -318,6 +340,35 @@ var map_SpotVMOptions = map[string]string{
 
 func (SpotVMOptions) SwaggerDoc() map[string]string {
 	return map_SpotVMOptions
+}
+
+var map_TrustedLaunch = map[string]string{
+	"":             "TrustedLaunch defines the UEFI settings for the virtual machine.",
+	"uefiSettings": "uefiSettings specifies the security settings like secure boot and vTPM used while creating the virtual machine.",
+}
+
+func (TrustedLaunch) SwaggerDoc() map[string]string {
+	return map_TrustedLaunch
+}
+
+var map_UEFISettings = map[string]string{
+	"":                                 "UEFISettings specifies the security settings like secure boot and vTPM used while creating the virtual machine.",
+	"secureBoot":                       "secureBoot specifies whether secure boot should be enabled on the virtual machine. Secure Boot verifies the digital signature of all boot components and halts the boot process if signature verification fails. If omitted, the platform chooses a default, which is subject to change over time, currently that default is disabled.",
+	"virtualizedTrustedPlatformModule": "virtualizedTrustedPlatformModule specifies whether vTPM should be enabled on the virtual machine. When enabled the virtualized trusted platform module measurements are used to create a known good boot integrity policy baseline. The integrity policy baseline is used for comparison with measurements from subsequent VM boots to determine if anything has changed. This is required to be enabled if SecurityEncryptionType is defined. If omitted, the platform chooses a default, which is subject to change over time, currently that default is disabled.",
+}
+
+func (UEFISettings) SwaggerDoc() map[string]string {
+	return map_UEFISettings
+}
+
+var map_VMDiskSecurityProfile = map[string]string{
+	"":                       "VMDiskSecurityProfile specifies the security profile settings for the managed disk. It can be set only for Confidential VMs.",
+	"diskEncryptionSet":      "diskEncryptionSet specifies the customer managed disk encryption set resource id for the managed disk that is used for Customer Managed Key encrypted ConfidentialVM OS Disk and VMGuest blob.",
+	"securityEncryptionType": "securityEncryptionType specifies the encryption type of the managed disk. It is set to DiskWithVMGuestState to encrypt the managed disk along with the VMGuestState blob, and to VMGuestStateOnly to encrypt the VMGuestState blob only. When set to VMGuestStateOnly, the vTPM should be enabled. When set to DiskWithVMGuestState, both SecureBoot and vTPM should be enabled. If the above conditions are not fulfilled, the VM will not be created and the respective error will be returned. It can be set only for Confidential VMs. Confidential VMs are defined by their SecurityProfile.SecurityType being set to ConfidentialVM, the SecurityEncryptionType of their OS disk being set to one of the allowed values and by enabling the respective SecurityProfile.UEFISettings of the VM (i.e. vTPM and SecureBoot), depending on the selected SecurityEncryptionType. For further details on Azure Confidential VMs, please refer to the respective documentation: https://learn.microsoft.com/azure/confidential-computing/confidential-vm-overview",
+}
+
+func (VMDiskSecurityProfile) SwaggerDoc() map[string]string {
+	return map_VMDiskSecurityProfile
 }
 
 var map_GCPDisk = map[string]string{
@@ -379,7 +430,7 @@ var map_GCPMachineProviderSpec = map[string]string{
 	"gcpMetadata":            "Metadata key/value pairs to apply to the VM.",
 	"networkInterfaces":      "NetworkInterfaces is a list of network interfaces to be attached to the VM.",
 	"serviceAccounts":        "ServiceAccounts is a list of GCP service accounts to be used by the VM.",
-	"tags":                   "Tags list of tags to apply to the VM.",
+	"tags":                   "Tags list of network tags to apply to the VM.",
 	"targetPools":            "TargetPools are used for network TCP/UDP load balancing. A target pool references member instances, an associated legacy HttpHealthCheck resource, and, optionally, a backup target pool",
 	"machineType":            "MachineType is the machine type to use for the VM.",
 	"region":                 "Region is the region in which the GCP machine provider will create the VM.",
@@ -391,6 +442,7 @@ var map_GCPMachineProviderSpec = map[string]string{
 	"restartPolicy":          "RestartPolicy determines the behavior when an instance crashes or the underlying infrastructure provider stops the instance as part of a maintenance event (default \"Always\"). Cannot be \"Always\" with preemptible instances. Otherwise, allowed values are \"Always\" and \"Never\". If omitted, the platform chooses a default, which is subject to change over time, currently that default is \"Always\". RestartPolicy represents AutomaticRestart in GCP compute api",
 	"shieldedInstanceConfig": "ShieldedInstanceConfig is the Shielded VM configuration for the VM",
 	"confidentialCompute":    "confidentialCompute Defines whether the instance should have confidential compute enabled. If enabled OnHostMaintenance is required to be set to \"Terminate\". If omitted, the platform chooses a default, which is subject to change over time, currently that default is false.",
+	"resourceManagerTags":    "resourceManagerTags is an optional list of tags to apply to the GCP resources created for the cluster. See https://cloud.google.com/resource-manager/docs/tags/tags-overview for information on tagging GCP resources. GCP supports a maximum of 50 tags per resource.",
 }
 
 func (GCPMachineProviderSpec) SwaggerDoc() map[string]string {
@@ -449,6 +501,17 @@ var map_GCPShieldedInstanceConfig = map[string]string{
 
 func (GCPShieldedInstanceConfig) SwaggerDoc() map[string]string {
 	return map_GCPShieldedInstanceConfig
+}
+
+var map_ResourceManagerTag = map[string]string{
+	"":         "ResourceManagerTag is a tag to apply to GCP resources created for the cluster.",
+	"parentID": "parentID is the ID of the hierarchical resource where the tags are defined e.g. at the Organization or the Project level. To find the Organization or Project ID ref https://cloud.google.com/resource-manager/docs/creating-managing-organization#retrieving_your_organization_id https://cloud.google.com/resource-manager/docs/creating-managing-projects#identifying_projects An OrganizationID can have a maximum of 32 characters and must consist of decimal numbers, and cannot have leading zeroes. A ProjectID must be 6 to 30 characters in length, can only contain lowercase letters, numbers, and hyphens, and must start with a letter, and cannot end with a hyphen.",
+	"key":      "key is the key part of the tag. A tag key can have a maximum of 63 characters and cannot be empty. Tag key must begin and end with an alphanumeric character, and must contain only uppercase, lowercase alphanumeric characters, and the following special characters `._-`.",
+	"value":    "value is the value part of the tag. A tag value can have a maximum of 63 characters and cannot be empty. Tag value must begin and end with an alphanumeric character, and must contain only uppercase, lowercase alphanumeric characters, and the following special characters `_-.@%=+:,*#&(){}[]` and spaces.",
+}
+
+func (ResourceManagerTag) SwaggerDoc() map[string]string {
+	return map_ResourceManagerTag
 }
 
 var map_LastOperation = map[string]string{
@@ -721,6 +784,7 @@ var map_VSphereMachineProviderSpec = map[string]string{
 	"numCoresPerSocket": "NumCPUs is the number of cores among which to distribute CPUs in this virtual machine. Defaults to the analogue property value in the template from which this machine is cloned.",
 	"memoryMiB":         "MemoryMiB is the size of a virtual machine's memory, in MiB. Defaults to the analogue property value in the template from which this machine is cloned.",
 	"diskGiB":           "DiskGiB is the size of a virtual machine's disk, in GiB. Defaults to the analogue property value in the template from which this machine is cloned. This parameter will be ignored if 'LinkedClone' CloneMode is set.",
+	"tagIDs":            "tagIDs is an optional set of tags to add to an instance. Specified tagIDs must use URN-notation instead of display names. A maximum of 10 tag IDs may be specified.",
 	"snapshot":          "Snapshot is the name of the snapshot from which the VM was cloned",
 	"cloneMode":         "CloneMode specifies the type of clone operation. The LinkedClone mode is only support for templates that have at least one snapshot. If the template has no snapshots, then CloneMode defaults to FullClone. When LinkedClone mode is enabled the DiskGiB field is ignored as it is not possible to expand disks of linked clones. Defaults to FullClone. When using LinkedClone, if no snapshots exist for the source template, falls back to FullClone.",
 }
