@@ -30,7 +30,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 )
 
@@ -174,7 +174,7 @@ func (o OperatorClient) UpdateOperatorSpec(ctx context.Context, oldResourceVersi
 		return nil, "", fmt.Errorf("error generating patch: %w", err)
 	}
 
-	out, err := o.clientset.OperatorV1alpha1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: pointer.Bool(true)})
+	out, err := o.clientset.OperatorV1alpha1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: ptr.To(true)})
 	if err != nil {
 		return nil, "", err
 	}
@@ -187,7 +187,7 @@ func (o OperatorClient) UpdateOperatorStatus(ctx context.Context, oldResourceVer
 		return nil, fmt.Errorf("error generating patch: %w", err)
 	}
 
-	out, err := o.clientset.OperatorV1alpha1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: pointer.Bool(true)}, "status")
+	out, err := o.clientset.OperatorV1alpha1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: ptr.To(true)}, "status")
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +207,7 @@ func (o OperatorClient) EnsureFinalizer(ctx context.Context, finalizer string) e
 		return err
 	}
 
-	if _, err := o.clientset.OperatorV1alpha1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: pointer.Bool(true)}); err != nil {
+	if _, err := o.clientset.OperatorV1alpha1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: ptr.To(true)}); err != nil {
 		return err
 	}
 	return nil
@@ -226,7 +226,7 @@ func (o OperatorClient) RemoveFinalizer(ctx context.Context, finalizer string) e
 		return err
 	}
 
-	if _, err := o.clientset.OperatorV1alpha1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: pointer.Bool(true)}); err != nil {
+	if _, err := o.clientset.OperatorV1alpha1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: ptr.To(true)}); err != nil {
 		return err
 	}
 	return nil
