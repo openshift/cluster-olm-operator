@@ -158,6 +158,16 @@ func (o OperatorClient) GetOperatorState() (*operatorv1.OperatorSpec, *operatorv
 	return &olm.Spec.OperatorSpec, &olm.Status.OperatorStatus, olm.ResourceVersion, nil
 }
 
+func (o OperatorClient) GetOperatorStateWithQuorum(ctx context.Context) (*operatorv1.OperatorSpec, *operatorv1.OperatorStatus, string, error) {
+	orig, err := o.clientset.OperatorV1alpha1().OLMs().Get(ctx, globalConfigName, metav1.GetOptions{})
+	if err != nil {
+		return nil, nil, "", err
+	}
+
+	olm := orig.DeepCopy()
+	return &olm.Spec.OperatorSpec, &olm.Status.OperatorStatus, olm.ResourceVersion, nil
+}
+
 func (o OperatorClient) UpdateOperatorSpec(ctx context.Context, oldResourceVersion string, in *operatorv1.OperatorSpec) (*operatorv1.OperatorSpec, string, error) {
 	patch, err := generateOLMPatch(oldResourceVersion, in, "spec")
 	if err != nil {
