@@ -1,8 +1,8 @@
 module github.com/openshift/cluster-olm-operator
 
-go 1.21
+go 1.22
 
-toolchain go1.21.8
+toolchain go1.22.1
 
 require (
 	github.com/openshift/api v0.0.0-20240424142232-29a704bf5aa2
