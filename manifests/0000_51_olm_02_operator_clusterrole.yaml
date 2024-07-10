@@ -24,6 +24,7 @@ rules:
       - get
       - list
       - watch
+      - create
   - apiGroups:
       - ""
     resources:
@@ -208,3 +209,12 @@ rules:
     verbs:
     - get
     - list
+  - apiGroups:
+    - ""
+    resources:
+    - configmaps
+    verbs:
+    - update
+    - patch
+    resourceNames:
+    - operator-controller-openshift-ca
