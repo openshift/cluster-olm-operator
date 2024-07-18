@@ -63,7 +63,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		ControllerContext: cc,
 	}
 
-	controllers, relatedObjects, err := cb.BuildControllers("catalogd", "operator-controller", "rukpak")
+	controllers, relatedObjects, err := cb.BuildControllers("catalogd", "operator-controller")
 	if err != nil {
 		return err
 	}
