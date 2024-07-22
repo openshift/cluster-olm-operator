@@ -47,17 +47,6 @@ spec:
           volumeMounts:
           - mountPath: /operand-assets
             name: operand-assets
-        - name: copy-rukpak-manifests
-          image: quay.io/openshift/origin-olm-rukpak:latest
-          imagePullPolicy: IfNotPresent
-          command:
-          - /bin/sh
-          args:
-          - -c
-          - cp -a /openshift/manifests /operand-assets/rukpak
-          volumeMounts:
-          - mountPath: /operand-assets
-            name: operand-assets
       containers:
       - name: cluster-olm-operator
         image: quay.io/openshift/origin-cluster-olm-operator:latest
