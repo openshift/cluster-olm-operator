@@ -71,8 +71,6 @@ spec:
           value: quay.io/openshift/origin-olm-catalogd:latest
         - name: OPERATOR_CONTROLLER_IMAGE
           value: quay.io/openshift/origin-olm-operator-controller:latest
-        - name: RUKPAK_IMAGE
-          value: quay.io/openshift/origin-olm-rukpak:latest
         resources:
           requests:
             cpu: 10m

@@ -92,7 +92,6 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 					[]deploymentcontroller.ManifestHookFunc{
 						replaceImageHook("${CATALOGD_IMAGE}", "CATALOGD_IMAGE"),
 						replaceImageHook("${OPERATOR_CONTROLLER_IMAGE}", "OPERATOR_CONTROLLER_IMAGE"),
-						replaceImageHook("${RUKPAK_IMAGE}", "RUKPAK_IMAGE"),
 						replaceImageHook("${KUBE_RBAC_PROXY_IMAGE}", "KUBE_RBAC_PROXY_IMAGE"),
 					},
 				)
