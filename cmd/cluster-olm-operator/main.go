@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	goflag "flag"
+	"fmt"
 	"os"
 
 	_ "github.com/openshift/api/operator/v1alpha1/zz_generated.crd-manifests"
@@ -32,10 +33,20 @@ func main() {
 }
 
 func newRootCommand() *cobra.Command {
+	var versionFlag bool
+
 	cmd := &cobra.Command{
 		Use:   "cluster-olm-operator",
 		Short: "OpenShift Cluster OLM Operator",
+		Run: func(cmd *cobra.Command, args []string) {
+			if versionFlag {
+				fmt.Println(version.Get())
+				os.Exit(0)
+			}
+			cmd.Help()
+		},
 	}
+	cmd.PersistentFlags().BoolVarP(&versionFlag, "version", "V", false, "Print the version number and exit")
 	cmd.AddCommand(newStartCommand())
 	return cmd
 }
@@ -48,6 +59,7 @@ func newStartCommand() *cobra.Command {
 	).NewCommandWithContext(context.Background())
 	cmd.Use = "start"
 	cmd.Short = "Start the Cluster OLM Operator"
+
 	return cmd
 }
 
