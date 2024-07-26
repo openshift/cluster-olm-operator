@@ -43,7 +43,10 @@ func newRootCommand() *cobra.Command {
 				fmt.Println(version.Get())
 				os.Exit(0)
 			}
-			cmd.Help()
+			if err := cmd.Help(); err != nil {
+				fmt.Println("Error displaying help:", err)
+				os.Exit(1)
+			}
 		},
 	}
 	cmd.PersistentFlags().BoolVarP(&versionFlag, "version", "V", false, "Print the version number and exit")
@@ -59,7 +62,6 @@ func newStartCommand() *cobra.Command {
 	).NewCommandWithContext(context.Background())
 	cmd.Use = "start"
 	cmd.Short = "Start the Cluster OLM Operator"
-
 	return cmd
 }
 
