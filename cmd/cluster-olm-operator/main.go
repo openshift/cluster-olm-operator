@@ -97,10 +97,18 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		controllerList = append(controllerList, controller)
 	}
 
-	upgradeableConditionController := controller.NewStaticUpgradeableConditionController(
+	staticUpgradeableConditionController := controller.NewStaticUpgradeableConditionController(
 		"OLMStaticUpgradeableConditionController",
 		cl.OperatorClient,
 		cc.EventRecorder.ForComponent("OLMStaticUpgradeableConditionController"),
+		controllerNames,
+	)
+
+	dynamicUpgradeableConditionController := controller.NewDynamicUpgradeableConditionController(
+		cl.KubeClient,
+		"OLMDynamicUpgradeableConditionController",
+		cl.OperatorClient,
+		cc.EventRecorder.ForComponent("OLMDynamicUpgradeableConditionController"),
 		controllerNames,
 	)
 
@@ -119,7 +127,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 
 	cl.StartInformers(ctx)
 
-	for _, c := range append(controllerList, upgradeableConditionController, clusterOperatorController) {
+	for _, c := range append(controllerList, staticUpgradeableConditionController, dynamicUpgradeableConditionController, clusterOperatorController) {
 		go func(c factory.Controller) {
 			defer runtime.HandleCrash()
 			c.Run(ctx, 1)
