@@ -1,13 +1,8 @@
 package controller
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"strings"
@@ -19,27 +14,41 @@ import (
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
+	helmclient "github.com/operator-framework/helm-operator-plugins/pkg/client"
+	storage "github.com/operator-framework/helm-operator-plugins/pkg/storage"
+	ocv1alpha1 "github.com/operator-framework/operator-controller/api/v1alpha1"
+	helm "helm.sh/helm/v3/pkg/storage"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 )
 
 const (
 	incompatibleOperatorsInstalled = "IncompatibleOperatorsInstalled"
 	MaxOpenShiftVersionProperty    = "olm.maxOpenShiftVersion"
+	OwnerKindKey                   = "olm.operatorframework.io/owner-kind"
+	OwnerNameKey                   = "olm.operatorframework.io/owner-name"
+	PackageNameKey                 = "olm.operatorframework.io/package-name"
+	BundleNameKey                  = "olm.operatorframework.io/bundle-name"
+	BundleVersionKey               = "olm.operatorframework.io/bundle-version"
 )
 
 type dynamicUpgradeableConditionController struct {
-	informer       cache.SharedIndexInformer
-	client         kubernetes.Interface
+	kubeclient     kubernetes.Interface
+	informer       informers.GenericInformer
+	client         dynamic.Interface
 	name           string
 	operatorClient *clients.OperatorClient
 	prefixes       []string
 }
 
-type Chart struct {
+type ChartMetadata struct {
 	Metadata struct {
 		Annotations map[string]string `yaml:"annotations"`
 	} `yaml:"metadata"`
@@ -47,48 +56,53 @@ type Chart struct {
 
 type SecretData struct {
 	Chart struct {
-		Chart
+		ChartMetadata
 	} `yaml:"chart"`
 }
 
-func NewDynamicUpgradeableConditionController(client kubernetes.Interface, name string, operatorClient *clients.OperatorClient, eventRecorder events.Recorder, prefixes []string) factory.Controller {
-	informer := informers.NewSharedInformerFactoryWithOptions(client, 0).Core().V1().Secrets().Informer()
+func NewDynamicUpgradeableConditionController(kubeclient kubernetes.Interface, client dynamic.Interface, name string, operatorClient *clients.OperatorClient, eventRecorder events.Recorder, prefixes []string) factory.Controller {
+	infFact := dynamicinformer.NewDynamicSharedInformerFactory(client, 0)
+
+	clusterExtensionGVR := schema.GroupVersionResource{
+		Group:    ocv1alpha1.ClusterExtensionGVK.Group,
+		Version:  ocv1alpha1.ClusterExtensionGVK.Version,
+		Resource: ocv1alpha1.ClusterExtensionGVK.Kind,
+	}
+
+	inf := infFact.ForResource(clusterExtensionGVR)
 
 	c := &dynamicUpgradeableConditionController{
-		informer:       informer,
+		informer:       inf,
 		client:         client,
+		kubeclient:     kubeclient,
 		name:           name,
 		operatorClient: operatorClient,
 		prefixes:       prefixes,
 	}
 
-	informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    c.handleSecret,
-		UpdateFunc: func(oldObj, newObj interface{}) { c.handleSecret(newObj) },
-		DeleteFunc: c.handleSecret,
+	inf.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    c.handleClusterExtension,
+		UpdateFunc: func(oldObj, newObj interface{}) { c.handleClusterExtension(newObj) },
+		DeleteFunc: c.handleClusterExtension,
 	})
 
-	return factory.New().WithInformers(informer).ToController(name, eventRecorder)
+	return factory.New().WithInformers(inf.Informer()).ToController(name, eventRecorder)
 }
 
-func (c *dynamicUpgradeableConditionController) handleSecret(obj interface{}) {
-	secret, ok := obj.(*corev1.Secret)
+func (c *dynamicUpgradeableConditionController) handleClusterExtension(obj interface{}) {
+	_, ok := obj.(*ocv1alpha1.ClusterExtension)
 	if !ok {
-		log.Println("Error: could not cast to Secret object")
+		log.Println("Error: could not cast to ClusterExtension object")
 		return
 	}
 
-	if _, exists := secret.Labels["olm.operatorframework.io/owner-kind"]; exists {
-		if secret.Labels["olm.operatorframework.io/owner-kind"] == "ClusterExtension" {
-			c.processSecret(secret)
-		}
-	}
+	c.syncIncompatibleOperators()
 }
 
-func (c *dynamicUpgradeableConditionController) processSecret(secret *corev1.Secret) {
+func (c *dynamicUpgradeableConditionController) syncIncompatibleOperators() {
 	current, err := getCurrentRelease()
 	if err != nil {
-		log.Printf("Error processing secrets: %v", err)
+		log.Printf("Error getting current OCP release: %v", err)
 		return
 	}
 
@@ -101,60 +115,52 @@ func (c *dynamicUpgradeableConditionController) processSecret(secret *corev1.Sec
 
 	next, err := nextY(*current)
 	if err != nil {
-		log.Printf("Error processing secrets: %v", err)
+		log.Printf("Error finding next OCP Y-stream release: %v", err)
 		return
 	}
 
-	var secretsWithAnnotation []string
+	var incompatibleOperators []string
 
-	// List all secrets with the label
-	secrets, err := c.client.CoreV1().Secrets(secret.Namespace).List(context.TODO(), metav1.ListOptions{
-		LabelSelector: "olm.operatorframework.io/owner-kind=ClusterExtension",
-	})
+	ceList, err := c.informer.Lister().List(nil)
 	if err != nil {
-		log.Printf("Error listing secrets: %v", err)
+		log.Printf("Error listing cluster extensions: %v", err)
 		return
 	}
 
-	for _, s := range secrets.Items {
-		if data, exists := s.Data["data"]; exists {
-			decodedData, err := base64.StdEncoding.DecodeString(string(data))
+	// Get all ClusterExtensions incompatible with next Y-stream
+	for _, obj := range ceList {
+		ce, ok := obj.(*ocv1alpha1.ClusterExtension)
+		if !ok {
+			log.Println("Error: could not cast to ClusterExtension object")
+			return
+		}
+		store := buildHelmStore(ce, c.kubeclient.CoreV1().Secrets(ce.Namespace))
+
+		rel, _ := store.Deployed(ce.Name)
+		version, ok := rel.Chart.Metadata.Annotations[MaxOpenShiftVersionProperty]
+		if ok {
+			maxOCPVersion, err := toSemver(version)
 			if err != nil {
-				log.Printf("Error decoding base64 data for secret %s: %v", s.Name, err)
+				log.Printf("Error converting to semver for version %s: %v", version, err)
 				continue
 			}
-
-			gunzippedData, err := gunzipData(decodedData)
-			if err != nil {
-				log.Printf("Error gunzipping data for secret %s: %v", s.Name, err)
-				continue
-			}
-
-			version, found := getAnnotationValue(gunzippedData, MaxOpenShiftVersionProperty)
-			if found {
-				maxOCPVersion, err := toSemver(version)
-				if err != nil {
-					log.Printf("Error converting to semver for secret %s: %v", s.Name, err)
-					continue
-				}
-				if maxOCPVersion == nil || maxOCPVersion.GTE(next) {
-					// All good
-				} else {
-					// Incompatible
-					name := secret.Labels["olm_operatorframework_io_bundle_name"]
-					secretsWithAnnotation = append(secretsWithAnnotation, name)
-				}
+			if maxOCPVersion == nil || maxOCPVersion.GTE(next) {
+				// All good
+			} else {
+				// Incompatible
+				name := rel.Labels[BundleNameKey]
+				incompatibleOperators = append(incompatibleOperators, name)
 			}
 		}
 	}
 
 	updateStatusFuncs := make([]v1helpers.UpdateStatusFunc, 0, 1)
-	if len(secretsWithAnnotation) > 0 {
+	if len(incompatibleOperators) > 0 {
 		updateStatusFuncs = append(updateStatusFuncs, v1helpers.UpdateConditionFn(operatorv1.OperatorCondition{
 			Type:    "Upgradeable",
 			Status:  operatorv1.ConditionFalse,
 			Reason:  incompatibleOperatorsInstalled,
-			Message: strings.Join(secretsWithAnnotation, ","),
+			Message: strings.Join(incompatibleOperators, ","),
 		}))
 
 		if _, _, updateErr := v1helpers.UpdateStatus(context.TODO(), c.operatorClient, updateStatusFuncs...); updateErr != nil {
@@ -175,32 +181,25 @@ func (c *dynamicUpgradeableConditionController) processSecret(secret *corev1.Sec
 	return
 }
 
-func getAnnotationValue(data string, annotationKey string) (string, bool) {
-	var chart Chart
-
-	err := json.Unmarshal([]byte(data), &chart)
-	if err != nil {
-		log.Printf("Error unmarshaling JSON data: %v", err)
-		return "", false
+func buildHelmStore(ce *ocv1alpha1.ClusterExtension, secretClient v1.SecretInterface) helm.Storage {
+	csConfig := storage.ChunkedSecretsConfig{
+		ChunkSize:      0,
+		MaxReadChunks:  0,
+		MaxWriteChunks: 0,
+		Log:            nil,
 	}
 
-	value, found := chart.Metadata.Annotations[annotationKey]
-	return value, found
-}
+	owner := ce.Name
+	ownerRefs := []metav1.OwnerReference{*metav1.NewControllerRef(ce, ce.GetObjectKind().GroupVersionKind())}
+	ownerRefSecretClient := helmclient.NewOwnerRefSecretClient(secretClient, ownerRefs, func(secret *corev1.Secret) bool {
+		return secret.Type == storage.SecretTypeChunkedIndex
+	})
 
-func gunzipData(data []byte) (string, error) {
-	reader, err := gzip.NewReader(bytes.NewReader(data))
-	if err != nil {
-		return "", fmt.Errorf("failed to create gzip reader: %w", err)
+	return helm.Storage{
+		Driver:     storage.NewChunkedSecrets(ownerRefSecretClient, owner, csConfig),
+		MaxHistory: 0,
+		Log:        log.Printf,
 	}
-	defer reader.Close()
-
-	unzippedData, err := io.ReadAll(reader)
-	if err != nil {
-		return "", fmt.Errorf("failed to read gunzipped data: %w", err)
-	}
-
-	return string(unzippedData), nil
 }
 
 type openshiftRelease struct {

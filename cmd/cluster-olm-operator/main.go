@@ -106,6 +106,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 
 	dynamicUpgradeableConditionController := controller.NewDynamicUpgradeableConditionController(
 		cl.KubeClient,
+		cl.DynamicClient,
 		"OLMDynamicUpgradeableConditionController",
 		cl.OperatorClient,
 		cc.EventRecorder.ForComponent("OLMDynamicUpgradeableConditionController"),
