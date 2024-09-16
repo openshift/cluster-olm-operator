@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
+	ocv1alpha1 "github.com/operator-framework/operator-controller/api/v1alpha1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -43,6 +45,7 @@ type Clients struct {
 	RESTMapper                 meta.RESTMapper
 	OperatorClient             *OperatorClient
 	OperatorInformers          operatorinformers.SharedInformerFactory
+	ClusterExtensionClient     *ClusterExtensionClient
 	ConfigClient               configclient.Interface
 	KubeInformerFactory        informers.SharedInformerFactory
 	ConfigInformerFactory      configinformer.SharedInformerFactory
@@ -91,16 +94,26 @@ func New(cc *controllercmd.ControllerContext) (*Clients, error) {
 		return nil, err
 	}
 
+	infFact := dynamicinformer.NewDynamicSharedInformerFactory(dynClient, defaultResyncPeriod)
+	clusterExtensionGVR := ocv1alpha1.GroupVersion.WithResource("clusterextensions")
+	inf := infFact.ForResource(clusterExtensionGVR)
+
+	ceClient := &ClusterExtensionClient{
+		factory:  infFact,
+		informer: inf,
+	}
+
 	return &Clients{
-		KubeClient:            kubeClient,
-		APIExtensionsClient:   apiExtensionsClient,
-		DynamicClient:         dynClient,
-		RESTMapper:            rm,
-		OperatorClient:        opClient,
-		OperatorInformers:     operatorInformersFactory,
-		ConfigClient:          configClient,
-		KubeInformerFactory:   informers.NewSharedInformerFactory(kubeClient, defaultResyncPeriod),
-		ConfigInformerFactory: configinformer.NewSharedInformerFactory(configClient, defaultResyncPeriod),
+		KubeClient:             kubeClient,
+		APIExtensionsClient:    apiExtensionsClient,
+		DynamicClient:          dynClient,
+		RESTMapper:             rm,
+		OperatorClient:         opClient,
+		OperatorInformers:      operatorInformersFactory,
+		ClusterExtensionClient: ceClient,
+		ConfigClient:           configClient,
+		KubeInformerFactory:    informers.NewSharedInformerFactory(kubeClient, defaultResyncPeriod),
+		ConfigInformerFactory:  configinformer.NewSharedInformerFactory(configClient, defaultResyncPeriod),
 	}, nil
 }
 
@@ -108,6 +121,7 @@ func (c *Clients) StartInformers(ctx context.Context) {
 	c.KubeInformerFactory.Start(ctx.Done())
 	c.ConfigInformerFactory.Start(ctx.Done())
 	c.OperatorInformers.Start(ctx.Done())
+	c.ClusterExtensionClient.factory.Start(ctx.Done())
 	if c.KubeInformersForNamespaces != nil {
 		c.KubeInformersForNamespaces.Start(ctx.Done())
 	}
@@ -130,6 +144,15 @@ const (
 	globalConfigName = "cluster"
 	fieldManager     = "cluster-olm-operator"
 )
+
+type ClusterExtensionClient struct {
+	factory  dynamicinformer.DynamicSharedInformerFactory
+	informer informers.GenericInformer
+}
+
+func (ce ClusterExtensionClient) Informer() informers.GenericInformer {
+	return ce.informer
+}
 
 type OperatorClient struct {
 	clientset operatorclient.Interface

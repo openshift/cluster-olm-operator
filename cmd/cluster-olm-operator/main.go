@@ -20,6 +20,7 @@ import (
 	"k8s.io/component-base/cli"
 	utilflag "k8s.io/component-base/cli/flag"
 
+	"github.com/openshift/cluster-olm-operator/internal/utils"
 	"github.com/openshift/cluster-olm-operator/pkg/clients"
 	"github.com/openshift/cluster-olm-operator/pkg/controller"
 	"github.com/openshift/cluster-olm-operator/pkg/version"
@@ -105,11 +106,26 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		deploymentControllerList = append(deploymentControllerList, controller)
 	}
 
+	operatorImageVersion := status.VersionForOperatorFromEnv()
+	nextOCPMinorVersion, err := utils.GetNextOCPMinorVersion(operatorImageVersion)
+	if err != nil {
+		return err
+	}
+
 	upgradeableConditionController := controller.NewStaticUpgradeableConditionController(
 		"OLMStaticUpgradeableConditionController",
 		cl.OperatorClient,
 		cc.EventRecorder.ForComponent("OLMStaticUpgradeableConditionController"),
 		controllerNames,
+	)
+
+	incompatibleOperatorController := controller.NewIncompatibleOperatorController(
+		"OLMIncompatibleOperatorController",
+		nextOCPMinorVersion,
+		cl.KubeClient,
+		cl.ClusterExtensionClient,
+		cl.OperatorClient,
+		cc.EventRecorder.ForComponent("OLMIncompatibleOperatorController"),
 	)
 
 	versionGetter := status.NewVersionGetter()
@@ -129,7 +145,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 
 	cl.StartInformers(ctx)
 
-	for _, c := range append(staticResourceControllerList, upgradeableConditionController, clusterOperatorController, operatorLoggingController) {
+	for _, c := range append(staticResourceControllerList, upgradeableConditionController, incompatibleOperatorController, clusterOperatorController, operatorLoggingController) {
 		go func(c factory.Controller) {
 			defer runtime.HandleCrash()
 			c.Run(ctx, 1)
