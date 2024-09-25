@@ -31,11 +31,12 @@ type Builder struct {
 	ControllerContext *controllercmd.ControllerContext
 }
 
-func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory.Controller, []configv1.ObjectReference, error) {
+func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory.Controller, map[string]factory.Controller, []configv1.ObjectReference, error) {
 	var (
-		controllers    = map[string]factory.Controller{}
-		relatedObjects []configv1.ObjectReference
-		errs           []error
+		staticResourceControllers = map[string]factory.Controller{}
+		deploymentControllers     = map[string]factory.Controller{}
+		relatedObjects            []configv1.ObjectReference
+		errs                      []error
 	)
 
 	titler := cases.Title(language.English)
@@ -81,7 +82,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 
 			if manifestGVK.Kind == "Deployment" && manifestGVK.Group == "apps" {
 				controllerName := controllerNameForObject(namePrefix, &manifest)
-				controllers[controllerName] = deploymentcontroller.NewDeploymentController(
+				deploymentControllers[controllerName] = deploymentcontroller.NewDeploymentController(
 					controllerName,
 					manifestData,
 					b.ControllerContext.EventRecorder.ForComponent(controllerName),
@@ -101,12 +102,12 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 			staticResourceFiles = append(staticResourceFiles, path)
 			return nil
 		}); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		if len(staticResourceFiles) > 0 {
 			controllerName := fmt.Sprintf("%sStaticResources", namePrefix)
-			controllers[controllerName] = staticresourcecontroller.NewStaticResourceController(
+			staticResourceControllers[controllerName] = staticresourcecontroller.NewStaticResourceController(
 				controllerName,
 				func(name string) ([]byte, error) { return fs.ReadFile(b.Assets, name) },
 				staticResourceFiles,
@@ -117,9 +118,9 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 		}
 	}
 	if len(errs) > 0 {
-		return nil, nil, fmt.Errorf("error building controllers: %w", errors.Join(errs...))
+		return nil, nil, nil, fmt.Errorf("error building controllers: %w", errors.Join(errs...))
 	}
-	return controllers, relatedObjects, nil
+	return staticResourceControllers, deploymentControllers, relatedObjects, nil
 }
 
 type object interface {
