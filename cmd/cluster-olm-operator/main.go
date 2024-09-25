@@ -5,6 +5,7 @@ import (
 	goflag "flag"
 	"fmt"
 	"os"
+	"time"
 
 	_ "github.com/openshift/api/operator/v1alpha1/zz_generated.crd-manifests"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
@@ -77,7 +78,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		ControllerContext: cc,
 	}
 
-	controllers, relatedObjects, err := cb.BuildControllers("catalogd", "operator-controller")
+	staticResourceControllers, deploymentControllers, relatedObjects, err := cb.BuildControllers("catalogd", "operator-controller")
 	if err != nil {
 		return err
 	}
@@ -89,12 +90,18 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 
 	cl.KubeInformersForNamespaces = v1helpers.NewKubeInformersForNamespaces(cl.KubeClient, namespaces.UnsortedList()...)
 
-	controllerNames := make([]string, 0, len(controllers))
-	controllerList := make([]factory.Controller, 0, len(controllers))
+	controllerNames := make([]string, 0, len(staticResourceControllers)+len(deploymentControllers))
+	staticResourceControllerList := make([]factory.Controller, 0, len(staticResourceControllers))
+	deploymentControllerList := make([]factory.Controller, 0, len(deploymentControllers))
 
-	for name, controller := range controllers {
+	for name, controller := range staticResourceControllers {
 		controllerNames = append(controllerNames, name)
-		controllerList = append(controllerList, controller)
+		staticResourceControllerList = append(staticResourceControllerList, controller)
+	}
+
+	for name, controller := range deploymentControllers {
+		controllerNames = append(controllerNames, name)
+		deploymentControllerList = append(deploymentControllerList, controller)
 	}
 
 	upgradeableConditionController := controller.NewStaticUpgradeableConditionController(
@@ -119,7 +126,16 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 
 	cl.StartInformers(ctx)
 
-	for _, c := range append(controllerList, upgradeableConditionController, clusterOperatorController) {
+	for _, c := range append(staticResourceControllerList, upgradeableConditionController, clusterOperatorController) {
+		go func(c factory.Controller) {
+			defer runtime.HandleCrash()
+			c.Run(ctx, 1)
+		}(c)
+	}
+
+	time.Sleep(10 * time.Second)
+
+	for _, c := range deploymentControllerList {
 		go func(c factory.Controller) {
 			defer runtime.HandleCrash()
 			c.Run(ctx, 1)
