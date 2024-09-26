@@ -10,6 +10,7 @@ import (
 	_ "github.com/openshift/api/operator/v1alpha1/zz_generated.crd-manifests"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/controller/factory"
+	"github.com/openshift/library-go/pkg/operator/loglevel"
 	"github.com/openshift/library-go/pkg/operator/status"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/spf13/cobra"
@@ -124,9 +125,11 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		cc.EventRecorder.ForComponent("olm"),
 	)
 
+	operatorLoggingController := loglevel.NewClusterOperatorLoggingController(cl.OperatorClient, cc.EventRecorder.ForComponent("ClusterOLMOperatorLoggingController"))
+
 	cl.StartInformers(ctx)
 
-	for _, c := range append(staticResourceControllerList, upgradeableConditionController, clusterOperatorController) {
+	for _, c := range append(staticResourceControllerList, upgradeableConditionController, clusterOperatorController, operatorLoggingController) {
 		go func(c factory.Controller) {
 			defer runtime.HandleCrash()
 			c.Run(ctx, 1)
