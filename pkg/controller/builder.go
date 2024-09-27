@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -23,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 
 	"github.com/openshift/cluster-olm-operator/pkg/clients"
+	"github.com/openshift/library-go/pkg/operator/loglevel"
 )
 
 type Builder struct {
@@ -91,6 +93,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 					b.Clients.KubeInformerFactory.Apps().V1().Deployments(),
 					nil,
 					[]deploymentcontroller.ManifestHookFunc{
+						replaceVerbosityHook("${LOG_VERBOSITY}"),
 						replaceImageHook("${CATALOGD_IMAGE}", "CATALOGD_IMAGE"),
 						replaceImageHook("${OPERATOR_CONTROLLER_IMAGE}", "OPERATOR_CONTROLLER_IMAGE"),
 						replaceImageHook("${KUBE_RBAC_PROXY_IMAGE}", "KUBE_RBAC_PROXY_IMAGE"),
@@ -135,6 +138,15 @@ func controllerNameForObject(prefix string, obj object) string {
 		obj.GetObjectKind().GroupVersionKind().Kind,
 		strings.ReplaceAll(titler.String(obj.GetName()), "-", ""),
 	)
+}
+
+func replaceVerbosityHook(placeholder string) deploymentcontroller.ManifestHookFunc {
+	return func(spec *operatorv1.OperatorSpec, deployment []byte) ([]byte, error) {
+		desiredVerbosity := loglevel.LogLevelToVerbosity(spec.LogLevel)
+		replacer := strings.NewReplacer(placeholder, strconv.Itoa(desiredVerbosity))
+		newDeployment := replacer.Replace(string(deployment))
+		return []byte(newDeployment), nil
+	}
 }
 
 func replaceImageHook(placeholder string, desiredImageEnvVar string) deploymentcontroller.ManifestHookFunc {
