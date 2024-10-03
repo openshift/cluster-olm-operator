@@ -58,7 +58,6 @@ spec:
         - /cluster-olm-operator
         args:
         - start
-        - -v=2
         imagePullPolicy: IfNotPresent
         env:
         - name: OPERATOR_NAME
