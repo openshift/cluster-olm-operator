@@ -138,6 +138,10 @@ func (c *incompatibleOperatorController) getIncompatibleOperators() ([]string, e
 			logger.Info("Chart or Chart.Metadata is nil")
 			continue
 		}
+		if _, ok := rel.Chart.Metadata.Annotations["olm.properties"]; !ok {
+			logger.Info("Bundle has no properties")
+			continue
+		}
 		logger = logger.WithValues("bundleName", rel.Labels[bundleNameKey])
 		props, err := propertyListFromPropertiesAnnotation(rel.Chart.Metadata.Annotations["olm.properties"])
 		if err != nil {
