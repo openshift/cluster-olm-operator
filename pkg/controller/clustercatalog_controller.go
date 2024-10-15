@@ -22,12 +22,13 @@ func NewClusterCatalogController(name string, manifest []byte, operatorClient *c
 	}
 
 	c := &clusterCatalogController{
-		name:           name,
-		obj:            obj.(*unstructured.Unstructured),
-		operatorClient: operatorClient,
-		dynamicClient:  dynamicClient,
-		recorder:       recorder,
-		resourceCache:  resourceapply.NewResourceCache(),
+		name:                 name,
+		obj:                  obj.(*unstructured.Unstructured),
+		operatorClient:       operatorClient,
+		clusterCatalogClient: clusterCatalogClient,
+		dynamicClient:        dynamicClient,
+		recorder:             recorder,
+		resourceCache:        resourceapply.NewResourceCache(),
 		// TODO: use the catalogd library to get this info
 		gvr: schema.GroupVersionResource{
 			Group:    "olm.operatorframework.io",
@@ -36,7 +37,7 @@ func NewClusterCatalogController(name string, manifest []byte, operatorClient *c
 		},
 	}
 
-	return factory.New().WithSync(c.sync).WithInformers(operatorClient.Informer(), clusterCatalogClient.Informer().Informer()).ToController(c.name, c.recorder)
+	return factory.New().WithSync(c.sync).WithInformers(operatorClient.Informer(), clusterCatalogClient.Informer()).ToController(c.name, c.recorder)
 }
 
 // clusterCatalogController is a generic controller for managing ClusterCatalog resources.
@@ -52,12 +53,13 @@ type clusterCatalogController struct {
 	// to make use of the resourceapply.ApplyUnstructuredResourceImproved
 	// function from library-go. There may be a better way to do this, but
 	// for now doing this.
-	obj            *unstructured.Unstructured
-	operatorClient *clients.OperatorClient
-	dynamicClient  dynamic.Interface
-	recorder       events.Recorder
-	resourceCache  resourceapply.ResourceCache
-	gvr            schema.GroupVersionResource
+	obj                  *unstructured.Unstructured
+	operatorClient       *clients.OperatorClient
+	clusterCatalogClient *clients.ClusterCatalogClient
+	dynamicClient        dynamic.Interface
+	recorder             events.Recorder
+	resourceCache        resourceapply.ResourceCache
+	gvr                  schema.GroupVersionResource
 }
 
 func (c *clusterCatalogController) sync(ctx context.Context, _ factory.SyncContext) error {
@@ -73,6 +75,15 @@ func (c *clusterCatalogController) sync(ctx context.Context, _ factory.SyncConte
 		return nil
 	}
 
+    // Fetch the latest version of the ClusterCatalog we are reconciling from the informer
+    // cache so we can get the resourceVersion
+    actual, err := c.clusterCatalogClient.Get(c.obj.GetName())
+    if err != nil {
+        return err
+    }
+
+	c.obj.SetResourceVersion(actual.(*unstructured.Unstructured).GetResourceVersion())
+
 	_, _, err = resourceapply.ApplyUnstructuredResourceImproved(ctx,
 		c.dynamicClient,
 		c.recorder,
@@ -83,4 +94,11 @@ func (c *clusterCatalogController) sync(ctx context.Context, _ factory.SyncConte
 		nil)
 
 	return err
+}
+
+type clusterCatalogEqualityChecker struct {}
+
+func (cec *clusterCatalogEqualityChecker) DeepEqual(existing, required interface{}) bool {
+    // TODO: implement me
+    return false
 }

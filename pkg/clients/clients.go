@@ -115,7 +115,6 @@ func (c *Clients) StartInformers(ctx context.Context) {
 	c.ConfigInformerFactory.Start(ctx.Done())
 	c.OperatorInformers.Start(ctx.Done())
 	c.ClusterExtensionClient.factory.Start(ctx.Done())
-    fmt.Println("XXX DEBUG", "starting ClusterCatalogClient informer factory!")
     c.ClusterCatalogClient.factory.Start(ctx.Done())
 	if c.KubeInformersForNamespaces != nil {
 		c.KubeInformersForNamespaces.Start(ctx.Done())
@@ -165,13 +164,15 @@ type ClusterCatalogClient struct {
 	informer informers.GenericInformer
 }
 
-func (cc *ClusterCatalogClient) Informer() informers.GenericInformer {
-	return cc.informer
+func (cc *ClusterCatalogClient) Informer() cache.SharedIndexInformer {
+	return cc.informer.Informer()
+}
+
+func (cc *ClusterCatalogClient) Get(name string) (runtime.Object, error) {
+    return cc.informer.Lister().Get(name)
 }
 
 func NewClusterCatalogClient(dynClient dynamic.Interface) *ClusterCatalogClient {
-    fmt.Println("XXX DEBUG", "enter NewClusterCatalogClient")
-    defer fmt.Println("XXX DEBUG", "exit NewClusterCatalogClient")
 	infFact := dynamicinformer.NewDynamicSharedInformerFactory(dynClient, defaultResyncPeriod)
 	clusterCatalogGVR := schema.GroupVersionResource{
 		Group:    "olm.operatorframework.io",
