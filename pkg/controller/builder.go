@@ -110,6 +110,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 					manifestData,
 					b.Clients.OperatorClient,
 					b.Clients.DynamicClient,
+                    b.Clients.ClusterCatalogClient,
 					b.ControllerContext.EventRecorder.ForComponent(controllerName),
 				)
                 return nil

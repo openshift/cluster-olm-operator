@@ -46,6 +46,7 @@ type Clients struct {
 	OperatorClient             *OperatorClient
 	OperatorInformers          operatorinformers.SharedInformerFactory
 	ClusterExtensionClient     *ClusterExtensionClient
+	ClusterCatalogClient       *ClusterCatalogClient
 	ConfigClient               configclient.Interface
 	KubeInformerFactory        informers.SharedInformerFactory
 	ConfigInformerFactory      configinformer.SharedInformerFactory
@@ -94,15 +95,6 @@ func New(cc *controllercmd.ControllerContext) (*Clients, error) {
 		return nil, err
 	}
 
-	infFact := dynamicinformer.NewDynamicSharedInformerFactory(dynClient, defaultResyncPeriod)
-	clusterExtensionGVR := ocv1alpha1.GroupVersion.WithResource("clusterextensions")
-	inf := infFact.ForResource(clusterExtensionGVR)
-
-	ceClient := &ClusterExtensionClient{
-		factory:  infFact,
-		informer: inf,
-	}
-
 	return &Clients{
 		KubeClient:             kubeClient,
 		APIExtensionsClient:    apiExtensionsClient,
@@ -110,7 +102,8 @@ func New(cc *controllercmd.ControllerContext) (*Clients, error) {
 		RESTMapper:             rm,
 		OperatorClient:         opClient,
 		OperatorInformers:      operatorInformersFactory,
-		ClusterExtensionClient: ceClient,
+		ClusterExtensionClient: NewClusterExtensionClient(dynClient),
+		ClusterCatalogClient:   NewClusterCatalogClient(dynClient),
 		ConfigClient:           configClient,
 		KubeInformerFactory:    informers.NewSharedInformerFactory(kubeClient, defaultResyncPeriod),
 		ConfigInformerFactory:  configinformer.NewSharedInformerFactory(configClient, defaultResyncPeriod),
@@ -122,6 +115,8 @@ func (c *Clients) StartInformers(ctx context.Context) {
 	c.ConfigInformerFactory.Start(ctx.Done())
 	c.OperatorInformers.Start(ctx.Done())
 	c.ClusterExtensionClient.factory.Start(ctx.Done())
+    fmt.Println("XXX DEBUG", "starting ClusterCatalogClient informer factory!")
+    c.ClusterCatalogClient.factory.Start(ctx.Done())
 	if c.KubeInformersForNamespaces != nil {
 		c.KubeInformersForNamespaces.Start(ctx.Done())
 	}
@@ -152,6 +147,43 @@ type ClusterExtensionClient struct {
 
 func (ce ClusterExtensionClient) Informer() informers.GenericInformer {
 	return ce.informer
+}
+
+func NewClusterExtensionClient(dynClient dynamic.Interface) *ClusterExtensionClient {
+	infFact := dynamicinformer.NewDynamicSharedInformerFactory(dynClient, defaultResyncPeriod)
+	clusterExtensionGVR := ocv1alpha1.GroupVersion.WithResource("clusterextensions")
+	inf := infFact.ForResource(clusterExtensionGVR)
+
+	return &ClusterExtensionClient{
+		factory:  infFact,
+		informer: inf,
+	}
+}
+
+type ClusterCatalogClient struct {
+	factory  dynamicinformer.DynamicSharedInformerFactory
+	informer informers.GenericInformer
+}
+
+func (cc *ClusterCatalogClient) Informer() informers.GenericInformer {
+	return cc.informer
+}
+
+func NewClusterCatalogClient(dynClient dynamic.Interface) *ClusterCatalogClient {
+    fmt.Println("XXX DEBUG", "enter NewClusterCatalogClient")
+    defer fmt.Println("XXX DEBUG", "exit NewClusterCatalogClient")
+	infFact := dynamicinformer.NewDynamicSharedInformerFactory(dynClient, defaultResyncPeriod)
+	clusterCatalogGVR := schema.GroupVersionResource{
+		Group:    "olm.operatorframework.io",
+		Version:  "v1alpha1",
+		Resource: "clustercatalogs",
+	}
+	inf := infFact.ForResource(clusterCatalogGVR)
+
+	return &ClusterCatalogClient{
+		factory:  infFact,
+		informer: inf,
+	}
 }
 
 type OperatorClient struct {

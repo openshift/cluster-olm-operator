@@ -1,8 +1,6 @@
 package controller
 
 import (
-	"time"
-
 	operatorv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/cluster-olm-operator/pkg/clients"
 	"github.com/openshift/library-go/pkg/controller/factory"
@@ -13,12 +11,11 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
 )
 
-func NewClusterCatalogController(name string, manifest []byte, operatorClient *clients.OperatorClient, dynamicClient dynamic.Interface, recorder events.Recorder) factory.Controller {
+func NewClusterCatalogController(name string, manifest []byte, operatorClient *clients.OperatorClient, dynamicClient dynamic.Interface, clusterCatalogClient *clients.ClusterCatalogClient, recorder events.Recorder) factory.Controller {
 	obj, _, err := scheme.Codecs.UniversalDecoder().Decode(manifest, nil, &unstructured.Unstructured{})
 	if err != nil {
 		panic("TODO: figure me out")
@@ -39,10 +36,7 @@ func NewClusterCatalogController(name string, manifest []byte, operatorClient *c
 		},
 	}
 
-	infFact := dynamicinformer.NewDynamicSharedInformerFactory(dynamicClient, time.Hour)
-	inf := infFact.ForResource(c.gvr)
-
-	return factory.New().WithSync(c.sync).WithInformers(operatorClient.Informer(), inf.Informer()).ToController(c.name, c.recorder)
+	return factory.New().WithSync(c.sync).WithInformers(operatorClient.Informer(), clusterCatalogClient.Informer().Informer()).ToController(c.name, c.recorder)
 }
 
 // clusterCatalogController is a generic controller for managing ClusterCatalog resources.
