@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
+	catalogdv1alpha1 "github.com/operator-framework/catalogd/api/core/v1alpha1"
 	ocv1alpha1 "github.com/operator-framework/operator-controller/api/v1alpha1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -115,7 +116,7 @@ func (c *Clients) StartInformers(ctx context.Context) {
 	c.ConfigInformerFactory.Start(ctx.Done())
 	c.OperatorInformers.Start(ctx.Done())
 	c.ClusterExtensionClient.factory.Start(ctx.Done())
-    c.ClusterCatalogClient.factory.Start(ctx.Done())
+	c.ClusterCatalogClient.factory.Start(ctx.Done())
 	if c.KubeInformersForNamespaces != nil {
 		c.KubeInformersForNamespaces.Start(ctx.Done())
 	}
@@ -168,17 +169,13 @@ func (cc *ClusterCatalogClient) Informer() cache.SharedIndexInformer {
 	return cc.informer.Informer()
 }
 
-func (cc *ClusterCatalogClient) Get(name string) (runtime.Object, error) {
-    return cc.informer.Lister().Get(name)
+func (cc *ClusterCatalogClient) Get(key types.NamespacedName) (runtime.Object, error) {
+	return cc.informer.Lister().Get(key.Name)
 }
 
 func NewClusterCatalogClient(dynClient dynamic.Interface) *ClusterCatalogClient {
 	infFact := dynamicinformer.NewDynamicSharedInformerFactory(dynClient, defaultResyncPeriod)
-	clusterCatalogGVR := schema.GroupVersionResource{
-		Group:    "olm.operatorframework.io",
-		Version:  "v1alpha1",
-		Resource: "clustercatalogs",
-	}
+	clusterCatalogGVR := catalogdv1alpha1.GroupVersion.WithResource("clustercatalogs")
 	inf := infFact.ForResource(clusterCatalogGVR)
 
 	return &ClusterCatalogClient{

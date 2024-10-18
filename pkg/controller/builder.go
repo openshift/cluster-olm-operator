@@ -105,7 +105,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 
 			if manifestGVK.Kind == "ClusterCatalog" && manifestGVK.Group == "olm.operatorframework.io" {
 				controllerName := controllerNameForObject(namePrefix, &manifest)
-				clusterCatalogControllers[controllerName] = NewClusterCatalogController(
+                clusterCatalogCtrl, err := NewClusterCatalogController(
 					controllerName,
 					manifestData,
 					b.Clients.OperatorClient,
@@ -113,6 +113,10 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
                     b.Clients.ClusterCatalogClient,
 					b.ControllerContext.EventRecorder.ForComponent(controllerName),
 				)
+                if err != nil {
+                    return fmt.Errorf("building ClusterCatalogController %q: %w", controllerName, err)
+                }
+				clusterCatalogControllers[controllerName] = clusterCatalogCtrl
                 return nil
 			}
 

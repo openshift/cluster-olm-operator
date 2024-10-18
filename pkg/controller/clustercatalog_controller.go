@@ -9,11 +9,12 @@ import (
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/management"
-	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
+	catalogdv1alpha1 "github.com/operator-framework/catalogd/api/core/v1alpha1"
 	"golang.org/x/net/context"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -25,29 +26,130 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-func NewClusterCatalogController(name string, manifest []byte, operatorClient *clients.OperatorClient, dynamicClient dynamic.Interface, clusterCatalogClient *clients.ClusterCatalogClient, recorder events.Recorder) factory.Controller {
+func NewClusterCatalogController(name string, manifest []byte, operatorClient *clients.OperatorClient, dynamicClient dynamic.Interface, clusterCatalogClient *clients.ClusterCatalogClient, recorder events.Recorder) (factory.Controller, error) {
 	obj, _, err := scheme.Codecs.UniversalDecoder().Decode(manifest, nil, &unstructured.Unstructured{})
 	if err != nil {
-		panic("TODO: figure me out")
+		return nil, fmt.Errorf("decoding manifest data: %w", err)
 	}
 
+	uObj := obj.(*unstructured.Unstructured)
+
 	c := &clusterCatalogController{
-		name:                 name,
-		obj:                  obj.(*unstructured.Unstructured),
-		operatorClient:       operatorClient,
-		clusterCatalogClient: clusterCatalogClient,
-		dynamicClient:        dynamicClient,
-		recorder:             recorder,
-		resourceCache:        resourceapply.NewResourceCache(),
-		// TODO: use the catalogd library to get this info
-		gvr: schema.GroupVersionResource{
-			Group:    "olm.operatorframework.io",
-			Version:  "v1alpha1",
-			Resource: "clustercatalogs",
+		name: name,
+		key: types.NamespacedName{
+			Namespace: uObj.GetNamespace(),
+			Name:      uObj.GetName(),
+		},
+		catalogGetter:  clusterCatalogClient,
+		requirementsEnsurer: &metadataSpecEnsurer{
+			required: obj.(*unstructured.Unstructured),
+		},
+		applier: &applier{
+			gv:       catalogdv1alpha1.GroupVersion,
+			kind:     "ClusterCatalog",
+			resource: "clustercatalogs",
+			client:   dynamicClient,
+			name:     name,
+		},
+		healthyFunc: clusterCatalogHealthyStatus,
+		isManagedFunc: func() (bool, error) {
+			operatorSpec, _, _, err := operatorClient.GetOperatorState()
+			if err != nil {
+				return false, err
+			}
+			return management.IsOperatorManaged(operatorSpec.ManagementState) && (operatorSpec.ManagementState != operatorv1.Removed || management.IsOperatorNotRemovable()), nil
 		},
 	}
 
-	return factory.New().WithSync(c.sync).WithInformers(operatorClient.Informer(), clusterCatalogClient.Informer()).ToController(c.name, c.recorder)
+	return factory.New().WithSync(c.sync).WithSyncDegradedOnError(operatorClient).WithInformers(operatorClient.Informer(), clusterCatalogClient.Informer()).ToController(c.name, recorder), nil
+}
+
+// RequirementsEnsurer is an abstraction that is used to represent a
+// type that has a method to ensure that required fields are set as expected on a provided
+// *unstructured.Unstructured
+type RequirementsEnsurer interface {
+	// EnsureRequirements ensures that pre-configured requirements are present on the
+	// provided *unstructured.Unstructured object, setting them if they are not present
+	// or the value does not match the requirement. It returns:
+	//   - A boolean that represents whether or not the provided *unstructured.Unstructured was modified (true == modified)
+	//   - An error if one occurred during the
+	EnsureRequirements(*unstructured.Unstructured) (bool, error)
+
+	// Required returns an *unstructured.Unstructured object matching all the requirements
+	Required() *unstructured.Unstructured
+}
+
+type metadataSpecEnsurer struct {
+	required *unstructured.Unstructured
+}
+
+func (mse *metadataSpecEnsurer) Required() *unstructured.Unstructured {
+	return mse.required.DeepCopy()
+}
+
+func (mse *metadataSpecEnsurer) EnsureRequirements(existing *unstructured.Unstructured) (bool, error) {
+	requiredCopy := mse.required.DeepCopy()
+	metadataModified, err := ensureRequiredMetadata(requiredCopy, existing)
+	if err != nil {
+		return false, fmt.Errorf("comparing required and existing metadata for ClusterCatalog %q: %w", mse.required.GetName(), err)
+	}
+
+	specModified, err := ensureRequiredSpec(requiredCopy, existing)
+	if err != nil {
+		return metadataModified, fmt.Errorf("comparing required and existing spec for ClusterCatalog %q: %w", mse.required.GetName(), err)
+	}
+
+	return metadataModified || specModified, nil
+}
+
+type Applier interface {
+	Apply(context.Context, *unstructured.Unstructured, *unstructured.Unstructured) error
+}
+
+type applier struct {
+	client   dynamic.Interface
+	gv       schema.GroupVersion
+	kind     string
+	resource string
+	name     string
+}
+
+func (a *applier) Apply(ctx context.Context, original, modified *unstructured.Unstructured) error {
+	// do nothing if modified is not provided
+	if modified == nil {
+		return nil
+	}
+	// Do a simple create if there is no original
+	if original == nil {
+		_, err := a.client.Resource(a.gv.WithResource(a.resource)).Create(ctx, modified, metav1.CreateOptions{})
+		if err != nil && !errors.IsAlreadyExists(err) {
+			return fmt.Errorf("creating resource %s %q: %w", a.gv.WithResource(a.resource), modified.GetName(), err)
+		}
+		return nil
+	}
+
+	// Generate and apply a patch for the diff between original and modified
+	diffPatch, err := generatePatch(original, modified)
+	if err != nil {
+		return fmt.Errorf("generating patch: %w", err)
+	}
+
+	_, err = a.client.Resource(a.gv.WithResource(a.resource)).Patch(ctx, original.GetName(), types.MergePatchType, diffPatch, metav1.PatchOptions{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: a.gv.String(),
+			Kind:       a.kind,
+		},
+		FieldManager: a.name,
+	})
+	if err != nil {
+		return fmt.Errorf("patching object %s %q with patch %s: %w", a.gv.WithResource(a.resource), original.GetName(), string(diffPatch), err)
+	}
+
+	return nil
+}
+
+type CatalogGetter interface {
+	Get(types.NamespacedName) (runtime.Object, error)
 }
 
 // clusterCatalogController is a generic controller for managing ClusterCatalog resources.
@@ -58,18 +160,13 @@ func NewClusterCatalogController(name string, manifest []byte, operatorClient *c
 // - Any fields not specified in the manifest provided to this controller will not be managed.
 // Users of the cluster are free to modify them as they please.
 type clusterCatalogController struct {
-	name string
-	// This needs to be an *unstructured.Unstructured
-	// to make use of the resourceapply.ApplyUnstructuredResourceImproved
-	// function from library-go. There may be a better way to do this, but
-	// for now doing this.
-	obj                  *unstructured.Unstructured
-	operatorClient       *clients.OperatorClient
-	clusterCatalogClient *clients.ClusterCatalogClient
-	dynamicClient        dynamic.Interface
-	recorder             events.Recorder
-	resourceCache        resourceapply.ResourceCache
-	gvr                  schema.GroupVersionResource
+	name                string
+	key                 types.NamespacedName
+	isManagedFunc       func() (bool, error)
+	catalogGetter       CatalogGetter
+	requirementsEnsurer RequirementsEnsurer
+	healthyFunc         func(*unstructured.Unstructured) error
+	applier             Applier
 }
 
 func (c *clusterCatalogController) sync(ctx context.Context, _ factory.SyncContext) error {
@@ -77,78 +174,55 @@ func (c *clusterCatalogController) sync(ctx context.Context, _ factory.SyncConte
 	logger.V(4).Info("sync started")
 	defer logger.V(4).Info("sync finished")
 
-	operatorSpec, _, _, err := c.operatorClient.GetOperatorState()
+	managed, err := c.isManagedFunc()
 	if err != nil {
-		return err
+		return fmt.Errorf("checking if operator is managed: %w", err)
 	}
-	if !management.IsOperatorManaged(operatorSpec.ManagementState) && (operatorSpec.ManagementState != operatorv1.Removed || management.IsOperatorNotRemovable()) {
+	if !managed {
 		return nil
 	}
 
-	// TODO: Should this be a live client fetch?
-	existing, err := c.clusterCatalogClient.Get(c.obj.GetName())
+	// TODO: Instead of using the degraded condition when we want to wait for a certain state
+	// it is probably better to set something like a Progressing condition
+	existing, err := c.catalogGetter.Get(c.key)
 	if errors.IsNotFound(err) {
-		_, err := c.dynamicClient.Resource(c.gvr).Create(ctx, c.obj.DeepCopy(), metav1.CreateOptions{})
-		if err != nil {
-			return fmt.Errorf("creating ClusterCatalog %q: %w", c.obj.GetName(), err)
+		applyErr := c.applier.Apply(ctx, nil, c.requirementsEnsurer.Required())
+		if applyErr != nil {
+			return fmt.Errorf("creating ClusterCatalog %q:%w", c.key, applyErr)
 		}
-		// Created successfully - move on
-		return nil
+		return fmt.Errorf("created ClusterCatalog %q, waiting for status to be updated", c.key)
 	}
-
 	if err != nil {
-		return fmt.Errorf("getting ClusterCatalog %q: %w", c.obj.GetName(), err)
+		return fmt.Errorf("getting ClusterCatalog %q: %w", c.key, err)
 	}
 
 	existingCopy := existing.(*unstructured.Unstructured).DeepCopy()
-	requiredCopy := c.obj.DeepCopy()
-	metadataModified, err := compareMetadata(requiredCopy, existingCopy)
+	changed, err := c.requirementsEnsurer.EnsureRequirements(existingCopy)
 	if err != nil {
-		return fmt.Errorf("comparing required and existing metadata for ClusterCatalog %q: %w", c.obj.GetName(), err)
+		return fmt.Errorf("ensuring ClusterCatalog %q matches requirements: %w", c.key, err)
 	}
 
-	specModified, err := compareSpec(requiredCopy, existingCopy)
-	if err != nil {
-		return fmt.Errorf("comparing required and existing spec for ClusterCatalog %q: %w", c.obj.GetName(), err)
+	// if we changed something, we should return an error
+	// and mark as degraded until we see:
+	// - no changes from our requirements
+	// - status represents the ClusterCatalog we are managing
+	// is in a "healthy" state.
+	if changed {
+		err = c.applier.Apply(ctx, existing.(*unstructured.Unstructured), existingCopy)
+		if err != nil {
+			return fmt.Errorf("patching ClusterCatalog %q: %w", c.key, err)
+		}
+		return fmt.Errorf("requirements not met, ClusterCatalog %q was patched to meet requirements. Marking as degraded until we know requirements are met and ClusterCatalog is healthy", c.key)
 	}
 
-	if !metadataModified && !specModified {
-		klog.V(4).Infof("required and existing ClusterCatalog %q are the same", c.obj.GetName())
-		// Nothing to do - they are the same!
-		return nil
-	}
-
-	klog.V(4).Info("metadata modified? ", metadataModified, " spec modified? ", specModified)
-
-	unstructured.RemoveNestedField(existingCopy.Object, "status")
-	unstructured.RemoveNestedField(requiredCopy.Object, "status")
-
-	diffPatch, err := generatePatch(existing, existingCopy)
-	if err != nil {
-		return fmt.Errorf("generating patch: %w", err)
-	}
-
-	klog.V(4).Infof("required and existing ClusterCatalog %q are not the same. patching with patch %s", c.obj.GetName(), string(diffPatch))
-	_, err = c.dynamicClient.Resource(c.gvr).Patch(ctx, c.obj.GetName(), types.ApplyPatchType, diffPatch, metav1.PatchOptions{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: c.gvr.GroupVersion().String(),
-			Kind:       "ClusterCatalog",
-		},
-		FieldManager: "cluster-olm-operator",
-		Force:        ptr.To(true),
-	})
-    if err != nil {
-        return fmt.Errorf("patching existing ClusterCatalog %q: %w", c.obj.GetName(), err)
-    }
-	return nil
+	// If nothing has changed, the last thing we need to verify is if the
+	// ClusterCatalog is considered "healthy" based on the status conditions.
+	// If it is not healthy, an error should be returned to mark this as degraded.
+	return c.healthyFunc(existing.(*unstructured.Unstructured))
 }
 
-// TODO: Do a custom patch (server-side apply) with the unstructured.Unstructured and a dynamic client.
-// Also add degraded condition communication for:
-// - Not serving (?) - check degraded docs (maybe Progressing == True with reason Retrying)
-// - Noticed a change but failed to apply - error returned from sync - would result in degraded
-
-func compareMetadata(required, existing *unstructured.Unstructured) (bool, error) {
+// NOTE: Most, if not all, of this logic was taken from library-go
+func ensureRequiredMetadata(required, existing *unstructured.Unstructured) (bool, error) {
 	existingMeta, found, err := unstructured.NestedMap(existing.Object, "metadata")
 	if err != nil {
 		return false, fmt.Errorf("extracting metadata from existing ClusterCatalog %q: %w", required.GetName(), err)
@@ -183,17 +257,17 @@ func compareMetadata(required, existing *unstructured.Unstructured) (bool, error
 
 	mergedMeta, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&existingObjectMetaTyped)
 	if err != nil {
-		return *didMetadataModify, fmt.Errorf("converting merged metadata back to unstructured: %w", err)
+		return false, fmt.Errorf("converting merged metadata back to unstructured: %w", err)
 	}
 	err = unstructured.SetNestedField(existing.Object, mergedMeta, "metadata")
 	if err != nil {
-		return *didMetadataModify, fmt.Errorf("setting existing metadata to merged metadata: %w", err)
+		return false, fmt.Errorf("setting existing metadata to merged metadata: %w", err)
 	}
 
 	return *didMetadataModify, nil
 }
 
-func compareSpec(required, existing *unstructured.Unstructured) (bool, error) {
+func ensureRequiredSpec(required, existing *unstructured.Unstructured) (bool, error) {
 	existingSpec, found, err := unstructured.NestedMap(existing.Object, "spec")
 	if err != nil {
 		return false, fmt.Errorf("extracting spec from existing ClusterCatalog %q: %w", required.GetName(), err)
@@ -215,7 +289,7 @@ func compareSpec(required, existing *unstructured.Unstructured) (bool, error) {
 
 	err = unstructured.SetNestedField(existing.Object, existingSpec, "spec")
 	if err != nil {
-		return *specModified, fmt.Errorf("setting existing spec to merged spec: %w", err)
+		return false, fmt.Errorf("setting existing spec to merged spec: %w", err)
 	}
 
 	return *specModified, nil
@@ -233,6 +307,28 @@ func generatePatch(original, modified runtime.Object) ([]byte, error) {
 	return patch.CreateMergePatch(originalJSON, modifiedJSON)
 }
 
+// TODO: May need to make this recursive. Need to test if doing something like:
+// required:
+//
+//	spec:
+//	  foo:
+//	    careabout: bark
+//
+// existing:
+//
+//	spec:
+//	  foo:
+//	    careabout: woof
+//	    dontcare: boo
+//
+// results in:
+//
+//	spec:
+//	  foo:
+//	    careabout: bark
+//	    dontcare: boo
+//
+// which is what I would expect. I have a feeling this isn't the case though :P
 func mergeSpecMaps(modified *bool, existing *map[string]interface{}, required map[string]interface{}) {
 	for key, value := range required {
 		existingValue, ok := (*existing)[key]
@@ -248,10 +344,42 @@ func mergeSpecMaps(modified *bool, existing *map[string]interface{}, required ma
 		// meaning there is a semantic difference between them, set the existing
 		// to the required.
 		diff := !equality.Semantic.DeepDerivative(value, existingValue)
-        klog.V(4).Info("mergeSpecMaps ", "required value ", value, " existing value ", existingValue, " diff ? ", diff)
+		klog.V(4).Info("mergeSpecMaps ", "required value ", value, " existing value ", existingValue, " diff ? ", diff)
 		if diff {
 			*modified = true
 			(*existing)[key] = value
 		}
 	}
+}
+
+// clusterCatalogHealthyStatus checks if the provided unstructured.Unstructured (that is expected to be a ClusterCatalog resource)
+// has the Serving condition set to True, signalling that the ClusterCatalog
+// has been successfully unpacked and is serving it's contents
+func clusterCatalogHealthyStatus(obj *unstructured.Unstructured) error {
+	catalog := &catalogdv1alpha1.ClusterCatalog{}
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.UnstructuredContent(), catalog)
+	if err != nil {
+		return fmt.Errorf("converting object to ClusterCatalog type: %w", err)
+	}
+
+	cond := meta.FindStatusCondition(catalog.Status.Conditions, catalogdv1alpha1.TypeServing)
+	if cond == nil {
+		return fmt.Errorf("could not find status condition type %q", catalogdv1alpha1.TypeServing)
+	}
+
+	// TODO: should we considered observed generation?
+	// if Serving condition observedGeneration = 1 but meta.generation = 6 is that "healthy"
+	// because $something is being served?
+
+	// Considered "unhealthy" when Serving != True with Reason == Unavailable.
+	if cond.Status != metav1.ConditionTrue && cond.Reason == catalogdv1alpha1.ReasonUnavailable {
+		return fmt.Errorf("catalog %q is currently unavailable", catalog.Name)
+	}
+
+	// Considered "unhealthy" when Serving != True with Reason == Disabled and the Availability mode doesn't match that it should be disabled
+	if cond.Status != metav1.ConditionTrue && cond.Reason == catalogdv1alpha1.ReasonDisabled && catalog.Spec.Availability != catalogdv1alpha1.AvailabilityDisabled {
+		return fmt.Errorf("catalog %q is reporting as disabled when it is not marked as disabled", catalog.Name)
+	}
+
+	return nil
 }
