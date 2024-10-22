@@ -220,6 +220,17 @@ rules:
     - list
     - watch
   - apiGroups:
+    - olm.operatorframework.io
+    resources:
+    - clustercatalogs
+    verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+  - apiGroups:
     - ""
     resources:
     - configmaps

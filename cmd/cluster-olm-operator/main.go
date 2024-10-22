@@ -80,7 +80,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		ControllerContext: cc,
 	}
 
-	staticResourceControllers, deploymentControllers, relatedObjects, err := cb.BuildControllers("catalogd", "operator-controller")
+	staticResourceControllers, deploymentControllers, clusterCatalogControllers, relatedObjects, err := cb.BuildControllers("catalogd", "operator-controller")
 	if err != nil {
 		return err
 	}
@@ -95,6 +95,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	controllerNames := make([]string, 0, len(staticResourceControllers)+len(deploymentControllers))
 	staticResourceControllerList := make([]factory.Controller, 0, len(staticResourceControllers))
 	deploymentControllerList := make([]factory.Controller, 0, len(deploymentControllers))
+	clusterCatalogControllerList := make([]factory.Controller, 0, len(clusterCatalogControllers))
 
 	for name, controller := range staticResourceControllers {
 		controllerNames = append(controllerNames, name)
@@ -104,6 +105,11 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	for name, controller := range deploymentControllers {
 		controllerNames = append(controllerNames, name)
 		deploymentControllerList = append(deploymentControllerList, controller)
+	}
+
+	for name, controller := range clusterCatalogControllers {
+		controllerNames = append(controllerNames, name)
+		clusterCatalogControllerList = append(clusterCatalogControllerList, controller)
 	}
 
 	operatorImageVersion := status.VersionForOperatorFromEnv()
@@ -155,6 +161,13 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	time.Sleep(10 * time.Second)
 
 	for _, c := range deploymentControllerList {
+		go func(c factory.Controller) {
+			defer runtime.HandleCrash()
+			c.Run(ctx, 1)
+		}(c)
+	}
+
+	for _, c := range clusterCatalogControllerList {
 		go func(c factory.Controller) {
 			defer runtime.HandleCrash()
 			c.Run(ctx, 1)

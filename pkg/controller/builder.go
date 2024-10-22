@@ -21,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/yaml"
 
 	"github.com/openshift/cluster-olm-operator/pkg/clients"
@@ -33,10 +34,11 @@ type Builder struct {
 	ControllerContext *controllercmd.ControllerContext
 }
 
-func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory.Controller, map[string]factory.Controller, []configv1.ObjectReference, error) {
+func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory.Controller, map[string]factory.Controller, map[string]factory.Controller, []configv1.ObjectReference, error) {
 	var (
 		staticResourceControllers = map[string]factory.Controller{}
 		deploymentControllers     = map[string]factory.Controller{}
+		clusterCatalogControllers = map[string]factory.Controller{}
 		relatedObjects            []configv1.ObjectReference
 		errs                      []error
 	)
@@ -102,10 +104,27 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 				return nil
 			}
 
+			if manifestGVK.Kind == "ClusterCatalog" && manifestGVK.Group == "olm.operatorframework.io" {
+				controllerName := controllerNameForObject(namePrefix, &manifest)
+				clusterCatalogControllers[controllerName] = NewClusterCatalogController(
+					controllerName,
+					manifestData,
+					types.NamespacedName{
+						Namespace: manifest.GetNamespace(),
+						Name:      manifest.GetName(),
+					},
+					b.Clients.OperatorClient,
+					b.Clients.DynamicClient,
+					b.Clients.ClusterCatalogClient,
+					b.ControllerContext.EventRecorder.ForComponent(controllerName),
+				)
+				return nil
+			}
+
 			staticResourceFiles = append(staticResourceFiles, path)
 			return nil
 		}); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 
 		if len(staticResourceFiles) > 0 {
@@ -121,9 +140,9 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 		}
 	}
 	if len(errs) > 0 {
-		return nil, nil, nil, fmt.Errorf("error building controllers: %w", errors.Join(errs...))
+		return nil, nil, nil, nil, fmt.Errorf("error building controllers: %w", errors.Join(errs...))
 	}
-	return staticResourceControllers, deploymentControllers, relatedObjects, nil
+	return staticResourceControllers, deploymentControllers, clusterCatalogControllers, relatedObjects, nil
 }
 
 type object interface {
