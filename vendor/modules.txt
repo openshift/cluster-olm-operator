@@ -350,7 +350,7 @@ github.com/openshift/library-go/pkg/serviceability
 github.com/operator-framework/api/pkg/lib/version
 github.com/operator-framework/api/pkg/operators
 github.com/operator-framework/api/pkg/operators/v1alpha1
-# github.com/operator-framework/catalogd v0.23.0 => github.com/openshift/operator-framework-catalogd v0.0.0-20241018021036-4275eb2ee38d
+# github.com/operator-framework/catalogd v0.23.0
 ## explicit; go 1.22.5
 github.com/operator-framework/catalogd/api/core/v1alpha1
 # github.com/operator-framework/helm-operator-plugins v0.5.0
@@ -1462,4 +1462,3 @@ sigs.k8s.io/structured-merge-diff/v4/value
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
 # github.com/openshift/library-go => github.com/gallettilance/library-go v0.0.0-20240916114351-b183885b7d04
-# github.com/operator-framework/catalogd => github.com/openshift/operator-framework-catalogd v0.0.0-20241018021036-4275eb2ee38d
