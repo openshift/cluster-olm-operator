@@ -37,7 +37,7 @@ func NewDynamicRequiredManifestController(name string, manifest []byte, key type
 		applyFunc:        defaultApplyFunc(dynamicClient),
 		managedFunc:      defaultManagedFunc(operatorClient),
 		shouldUpdateFunc: unstructuredShouldUpdateFunc(),
-		catalogGetFunc:   resourceClient.Get,
+		objectGetFunc:    resourceClient.Get,
 	}
 
 	return factory.New().WithSync(c.sync).WithSyncDegradedOnError(operatorClient).WithInformers(operatorClient.Informer(), resourceClient.Informer()).ToController(c.name, recorder)
@@ -135,7 +135,7 @@ type dynamicRequiredManifestController struct {
 	applyFunc        applyFunc
 	managedFunc      managedFunc
 	shouldUpdateFunc shouldUpdateFunc
-	catalogGetFunc   getObjectFunc
+	objectGetFunc    getObjectFunc
 }
 
 func (c *dynamicRequiredManifestController) sync(ctx context.Context, _ factory.SyncContext) error {
@@ -152,14 +152,14 @@ func (c *dynamicRequiredManifestController) sync(ctx context.Context, _ factory.
 		return nil
 	}
 
-	catalog, err := c.catalogGetFunc(c.key)
+	obj, err := c.objectGetFunc(c.key)
 	if err != nil && !errors.IsNotFound(err) {
 		return fmt.Errorf("fetching %s %q: %w", c.gvr, c.key, err)
 	}
 
 	// in the event the catalog was not found, the supplied for the existing is nil and
 	// shouldUpdateFunc is expected to return true.
-	shouldUpdate, err := c.shouldUpdateFunc(c.manifest, catalog)
+	shouldUpdate, err := c.shouldUpdateFunc(c.manifest, obj)
 	if err != nil {
 		return fmt.Errorf("determining if %s %q should be updated: %w", c.gvr, c.key, err)
 	}

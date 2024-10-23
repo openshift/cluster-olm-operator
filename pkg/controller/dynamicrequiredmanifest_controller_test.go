@@ -31,7 +31,7 @@ func noError() func(t *testing.T, err error) {
 	}
 }
 
-func TestClusterCatalogControllerSync(t *testing.T) {
+func TestDynamicRequiredManifestControllerSync(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		ctrl        *dynamicRequiredManifestController
@@ -56,7 +56,7 @@ func TestClusterCatalogControllerSync(t *testing.T) {
 			},
 		},
 		{
-			name:        "managed, catalog fetched successfully, should update, applyFunc returns error, error expected",
+			name:        "managed, resource fetched successfully, should update, applyFunc returns error, error expected",
 			assertError: containsError(errors.New("boom")),
 			ctrl: &dynamicRequiredManifestController{
 				name:        "foo",
@@ -68,13 +68,13 @@ func TestClusterCatalogControllerSync(t *testing.T) {
 				shouldUpdateFunc: func(_ []byte, _ runtime.Object) (bool, error) {
 					return true, nil
 				},
-				catalogGetFunc: func(_ types.NamespacedName) (runtime.Object, error) {
+				objectGetFunc: func(_ types.NamespacedName) (runtime.Object, error) {
 					return &unstructured.Unstructured{}, nil
 				},
 			},
 		},
 		{
-			name:        "managed, catalog successfully fetched, should update, applyFunc does not return an error, no error expected",
+			name:        "managed, resource successfully fetched, should update, applyFunc does not return an error, no error expected",
 			assertError: noError(),
 			ctrl: &dynamicRequiredManifestController{
 				name:        "foo",
@@ -86,31 +86,31 @@ func TestClusterCatalogControllerSync(t *testing.T) {
 				shouldUpdateFunc: func(_ []byte, _ runtime.Object) (bool, error) {
 					return true, nil
 				},
-				catalogGetFunc: func(_ types.NamespacedName) (runtime.Object, error) {
+				objectGetFunc: func(_ types.NamespacedName) (runtime.Object, error) {
 					return &unstructured.Unstructured{}, nil
 				},
 			},
 		},
 		{
-			name:        "managed, catalog fetch error, error expected",
+			name:        "managed, resource fetch error, error expected",
 			assertError: containsError(errors.New("boom")),
 			ctrl: &dynamicRequiredManifestController{
 				name:        "foo",
 				key:         types.NamespacedName{Name: "foo"},
 				managedFunc: func() (bool, error) { return true, nil },
-				catalogGetFunc: func(_ types.NamespacedName) (runtime.Object, error) {
+				objectGetFunc: func(_ types.NamespacedName) (runtime.Object, error) {
 					return nil, errors.New("boom")
 				},
 			},
 		},
 		{
-			name:        "managed, catalog successfully fetched, shouldUpdateFunc errors, error expected",
+			name:        "managed, resource successfully fetched, shouldUpdateFunc errors, error expected",
 			assertError: containsError(errors.New("boom")),
 			ctrl: &dynamicRequiredManifestController{
 				name:        "foo",
 				key:         types.NamespacedName{Name: "foo"},
 				managedFunc: func() (bool, error) { return true, nil },
-				catalogGetFunc: func(_ types.NamespacedName) (runtime.Object, error) {
+				objectGetFunc: func(_ types.NamespacedName) (runtime.Object, error) {
 					return &unstructured.Unstructured{}, nil
 				},
 				shouldUpdateFunc: func(_ []byte, _ runtime.Object) (bool, error) {
@@ -119,13 +119,13 @@ func TestClusterCatalogControllerSync(t *testing.T) {
 			},
 		},
 		{
-			name:        "managed, catalog successfully fetched, shouldn't update, applyFunc errors, no error expected",
+			name:        "managed, resource successfully fetched, shouldn't update, applyFunc errors, no error expected",
 			assertError: noError(),
 			ctrl: &dynamicRequiredManifestController{
 				name:        "foo",
 				key:         types.NamespacedName{Name: "foo"},
 				managedFunc: func() (bool, error) { return true, nil },
-				catalogGetFunc: func(_ types.NamespacedName) (runtime.Object, error) {
+				objectGetFunc: func(_ types.NamespacedName) (runtime.Object, error) {
 					return &unstructured.Unstructured{}, nil
 				},
 				shouldUpdateFunc: func(_ []byte, _ runtime.Object) (bool, error) {
@@ -137,14 +137,14 @@ func TestClusterCatalogControllerSync(t *testing.T) {
 			},
 		},
 		{
-			name:        "managed, catalog not found, should update, applyFunc does not error, no error expected",
+			name:        "managed, resource not found, should update, applyFunc does not error, no error expected",
 			assertError: noError(),
 			ctrl: &dynamicRequiredManifestController{
 				name:        "foo",
 				key:         types.NamespacedName{Name: "foo"},
 				managedFunc: func() (bool, error) { return true, nil },
-				catalogGetFunc: func(_ types.NamespacedName) (runtime.Object, error) {
-					return nil, apierrors.NewNotFound(catalogdv1alpha1.GroupVersion.WithResource("clustercatalogs").GroupResource(), "foo")
+				objectGetFunc: func(_ types.NamespacedName) (runtime.Object, error) {
+					return nil, apierrors.NewNotFound(catalogdv1alpha1.GroupVersion.WithResource("clusterresources").GroupResource(), "foo")
 				},
 				shouldUpdateFunc: func(_ []byte, _ runtime.Object) (bool, error) {
 					return true, nil
