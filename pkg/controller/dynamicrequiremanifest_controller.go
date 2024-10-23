@@ -93,7 +93,7 @@ func unstructuredShouldUpdateFunc() shouldUpdateFunc {
 
 		// we want the inverse of deep derivative to dictate if we should update.
 		// i.e If it is not deep derivative, meaning the requirements are not met, we should update
-		return !equality.Semantic.DeepDerivative(required.(*unstructured.Unstructured).UnstructuredContent(), existingUnstructured), nil
+		return !equality.Semantic.DeepDerivative(required.(*unstructured.Unstructured), existingUnstructured), nil
 	}
 }
 

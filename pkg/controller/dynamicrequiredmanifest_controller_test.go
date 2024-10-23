@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -161,3 +162,97 @@ func TestDynamicRequiredManifestControllerSync(t *testing.T) {
 		})
 	}
 }
+
+func TestUnstructuredShouldUpdateFunc(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		manifest     []byte
+		existing     runtime.Object
+		expectUpdate bool
+		assertError  func(t *testing.T, err error)
+	}{
+		{
+			name:         "existing is nil, no error, update needed",
+			existing:     nil,
+			expectUpdate: true,
+			assertError:  noError(),
+		},
+		{
+			name:         "existing is not *unstructured.Unstructured, error",
+			existing:     &corev1.Pod{},
+			expectUpdate: false,
+			assertError:  containsError(errors.New("expected existing to be of type *unstructured.Unstructured but was")),
+		},
+		{
+			name:     "required and existing are not deep derivative, no error, update needed",
+			manifest: []byte(requiredYAML),
+			existing: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"apiVersion": "olm.operatorframework.io/v1alpha1",
+					"kind":       "ClusterCatalog",
+					"metadata": map[string]interface{}{
+						"name": "openshift-certified-operators",
+					},
+					"spec": map[string]interface{}{
+						"source": map[string]interface{}{
+							"type": "Image",
+							"image": map[string]interface{}{
+								"pollInterval": "1h",
+								"ref":          "foobarbaz",
+							},
+						},
+					},
+				},
+			},
+			expectUpdate: true,
+			assertError:  noError(),
+		},
+		{
+			name:     "required and existing are deep derivative, no error, no update needed",
+			manifest: []byte(requiredYAML),
+			existing: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"apiVersion": "olm.operatorframework.io/v1alpha1",
+					"kind":       "ClusterCatalog",
+					"metadata": map[string]interface{}{
+						"name": "openshift-certified-operators",
+					},
+					"spec": map[string]interface{}{
+						"source": map[string]interface{}{
+							"type": "Image",
+							"image": map[string]interface{}{
+								"pollInterval": "10m0s",
+								"ref":          "registry.redhat.io/redhat/certified-operator-index:v4.18",
+							},
+						},
+					},
+				},
+			},
+			expectUpdate: false,
+			assertError:  noError(),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			updateFunc := unstructuredShouldUpdateFunc()
+			needsUpdate, err := updateFunc(tc.manifest, tc.existing)
+			tc.assertError(t, err)
+			if needsUpdate != tc.expectUpdate {
+				t.Fatalf("updateFunc return value doesn't match expected. expected needsUpdate: %v, actual needsUpdate: %v", tc.expectUpdate, needsUpdate)
+			}
+		})
+	}
+}
+
+const requiredYAML = `
+---
+apiVersion: olm.operatorframework.io/v1alpha1
+kind: ClusterCatalog
+metadata:
+  name: openshift-certified-operators
+spec:
+  source:
+    type: Image
+    image:
+      pollInterval: 10m0s
+      ref: registry.redhat.io/redhat/certified-operator-index:v4.18
+`
