@@ -216,6 +216,9 @@ func TestUnstructuredShouldUpdateFunc(t *testing.T) {
 					"kind":       "ClusterCatalog",
 					"metadata": map[string]interface{}{
 						"name": "openshift-certified-operators",
+						"labels": map[string]string{
+							"mycustomlabel": "foobar",
+						},
 					},
 					"spec": map[string]interface{}{
 						"source": map[string]interface{}{
