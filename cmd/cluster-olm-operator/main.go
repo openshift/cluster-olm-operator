@@ -15,6 +15,8 @@ import (
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/component-base/cli"
@@ -24,6 +26,8 @@ import (
 	"github.com/openshift/cluster-olm-operator/pkg/clients"
 	"github.com/openshift/cluster-olm-operator/pkg/controller"
 	"github.com/openshift/cluster-olm-operator/pkg/version"
+
+	catalogdv1alpha1 "github.com/operator-framework/catalogd/api/core/v1alpha1"
 )
 
 func main() {
@@ -74,10 +78,18 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		return err
 	}
 
+	clusterCatalogGvk := catalogdv1alpha1.GroupVersion.WithKind("ClusterCatalog")
 	cb := controller.Builder{
 		Assets:            os.DirFS("/operand-assets"),
 		Clients:           cl,
 		ControllerContext: cc,
+		KnownRESTMappings: map[schema.GroupVersionKind]*meta.RESTMapping{
+			clusterCatalogGvk: {
+				Resource:         catalogdv1alpha1.GroupVersion.WithResource("clustercatalogs"),
+				GroupVersionKind: clusterCatalogGvk,
+				Scope:            meta.RESTScopeRoot,
+			},
+		},
 	}
 
 	staticResourceControllers, deploymentControllers, clusterCatalogControllers, relatedObjects, err := cb.BuildControllers("catalogd", "operator-controller")
