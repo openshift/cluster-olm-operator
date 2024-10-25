@@ -18,9 +18,11 @@ import (
 	"github.com/openshift/library-go/pkg/operator/staticresourcecontroller"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/yaml"
 
@@ -34,6 +36,7 @@ type Builder struct {
 	Assets            fs.FS
 	Clients           *clients.Clients
 	ControllerContext *controllercmd.ControllerContext
+	KnownRESTMappings map[schema.GroupVersionKind]*meta.RESTMapping
 }
 
 func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory.Controller, map[string]factory.Controller, map[string]factory.Controller, []configv1.ObjectReference, error) {
@@ -74,10 +77,14 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 			}
 
 			manifestGVK := manifest.GroupVersionKind()
-			restMapping, err := b.Clients.RESTMapper.RESTMapping(manifestGVK.GroupKind(), manifestGVK.Version)
-			if err != nil {
-				errs = append(errs, fmt.Errorf("error looking up RESTMapping for file %q, gvk %v: %w", path, manifestGVK, err))
-				return nil
+			// check our known mappings first. If there isn't one, fallback to discovery
+			restMapping, ok := b.KnownRESTMappings[manifestGVK]
+			if !ok {
+				restMapping, err = b.Clients.RESTMapper.RESTMapping(manifestGVK.GroupKind(), manifestGVK.Version)
+				if err != nil {
+					errs = append(errs, fmt.Errorf("error looking up RESTMapping for file %q, gvk %v: %w", path, manifestGVK, err))
+					return nil
+				}
 			}
 			relatedObjects = append(relatedObjects, configv1.ObjectReference{
 				Group:     restMapping.GroupVersionKind.Group,
