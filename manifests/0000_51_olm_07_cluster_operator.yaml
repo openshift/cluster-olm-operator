@@ -10,3 +10,10 @@ status:
   versions:
   - name: operator
     version: "0.0.1-snapshot"
+  relatedObjects:
+  - group: ""
+    name: openshift-cluster-olm-operator
+    resource: namespaces
+  - group: operator.openshift.io
+    name: cluster
+    resource: olms
