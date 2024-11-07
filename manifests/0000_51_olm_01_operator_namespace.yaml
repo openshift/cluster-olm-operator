@@ -8,3 +8,4 @@ metadata:
     release.openshift.io/feature-set: TechPreviewNoUpgrade
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/enforce-version: latest
+    capability.openshift.io/name: "OperatorLifecycleManagerV1"

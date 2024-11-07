@@ -9,6 +9,7 @@ metadata:
     include.release.openshift.io/single-node-developer: "true"
     release.openshift.io/create-only: "true"
     release.openshift.io/feature-set: TechPreviewNoUpgrade
+    capability.openshift.io/name: "OperatorLifecycleManagerV1"
 spec:
   managementState: Managed
   logLevel: Normal
