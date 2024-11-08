@@ -9,9 +9,9 @@ replace github.com/openshift/library-go => github.com/gallettilance/library-go v
 require (
 	github.com/blang/semver/v4 v4.0.0
 	github.com/go-logr/logr v1.4.2
-	github.com/openshift/api v0.0.0-20240909041644-5852b58f4b10
+	github.com/openshift/api v0.0.0-20241107155230-d37bb9f7e380
 	github.com/openshift/build-machinery-go v0.0.0-20240613134303-8359781da660
-	github.com/openshift/client-go v0.0.0-20240906181530-b2f7c4ab0984
+	github.com/openshift/client-go v0.0.0-20241107164952-923091dd2b1a
 	github.com/openshift/library-go v0.0.0-20240905123346-5bdbfe35a6f5
 	github.com/operator-framework/catalogd v0.23.0
 	github.com/operator-framework/helm-operator-plugins v0.5.0
@@ -29,7 +29,7 @@ require (
 	k8s.io/client-go v0.31.1
 	k8s.io/component-base v0.31.1
 	k8s.io/klog/v2 v2.130.1
-	k8s.io/utils v0.0.0-20240711033017-18e509b52bc8
+	k8s.io/utils v0.0.0-20240921022957-49e7df575cb6
 	sigs.k8s.io/controller-runtime v0.19.0
 )
 

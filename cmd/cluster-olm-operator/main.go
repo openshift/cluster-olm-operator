@@ -10,7 +10,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 
-	_ "github.com/openshift/api/operator/v1alpha1/zz_generated.crd-manifests"
+	_ "github.com/openshift/api/operator/v1/zz_generated.crd-manifests"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/loglevel"
