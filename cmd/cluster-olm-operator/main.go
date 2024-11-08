@@ -7,7 +7,10 @@ import (
 	"os"
 	"time"
 
-	_ "github.com/openshift/api/operator/v1alpha1/zz_generated.crd-manifests"
+	configv1 "github.com/openshift/api/config/v1"
+	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
+
+	_ "github.com/openshift/api/operator/v1/zz_generated.crd-manifests"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/loglevel"
@@ -149,6 +152,14 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	versionGetter := status.NewVersionGetter()
 	versionGetter.SetVersion("operator", status.VersionForOperatorFromEnv())
 
+	// Add OLM resource and openshift-cluster-olm-operator namespace to relatedObjects
+	// to ensure that must-gather picks them up.
+	// Note: These two resources are also hard-coded in the ClusterOperator manifest. This way,
+	// must-gather will pick them up in case of catastrophic failure before we cluster-olm-operator
+	// gets a chance to dynamically update the relatedObjects. Thus, making the pod logs accessible
+	// for troubleshooting in the must-gather.
+	relatedObjects = append(relatedObjects, newOLMObjectReference(), newNamespaceObjectReference())
+
 	clusterOperatorController := status.NewClusterOperatorStatusController(
 		"olm",
 		relatedObjects,
@@ -188,4 +199,24 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 
 	<-ctx.Done()
 	return nil
+}
+
+// newOLMObjectReference creates a configv1.ObjectReference for
+// the cluster scoped OLM resources
+func newOLMObjectReference() configv1.ObjectReference {
+	return configv1.ObjectReference{
+		Group:    operatorv1alpha1.GroupName,
+		Resource: "olms",
+		Name:     "cluster",
+	}
+}
+
+// newNamespaceObjectReferences creates a configv1.ObjectReference for
+// the OCP namespaces where this operator is installed: openshift-cluster-olm-operator
+func newNamespaceObjectReference() configv1.ObjectReference {
+	return configv1.ObjectReference{
+		Group:    "",
+		Resource: "namespaces",
+		Name:     "openshift-cluster-olm-operator",
+	}
 }

@@ -7,7 +7,7 @@ FROM registry.ci.openshift.org/ocp/4.18:base-rhel9
 
 COPY --from=builder /build/bin/cluster-olm-operator /
 COPY manifests /manifests
-COPY vendor/github.com/openshift/api/operator/v1alpha1/zz_generated.crd-manifests/*_olms*.crd.yaml /manifests/
+COPY vendor/github.com/openshift/api/operator/v1/zz_generated.crd-manifests/*_olms*.crd.yaml /manifests/
 USER 1001
 
 LABEL io.openshift.release.operator=true \
