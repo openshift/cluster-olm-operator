@@ -198,8 +198,8 @@ github.com/operator-framework/operator-controller v0.15.0/go.mod h1:6U2jhRr+T/d1
 github.com/operator-framework/operator-registry v1.47.0 h1:Imr7X/W6FmXczwpIOXfnX8d6Snr1dzwWxkMG+lLAfhg=
 github.com/operator-framework/operator-registry v1.47.0/go.mod h1:CJ3KcP8uRxtC8l9caM1RsV7r7jYlKAd452tcxcgXyTQ=
 github.com/orisano/pixelmatch v0.0.0-20220722002657-fb0b55479cde/go.mod h1:nZgzbfBr3hhjoZnS66nKrHmduYNpc34ny7RK4z5/HM0=
-github.com/perdasilva/library-go v0.0.0-20241107160307-0064ad7bd060 h1:QdLyxglJyDKVcgTaiPMB4OTNnsb07466QqfEtqJUPy0=
-github.com/perdasilva/library-go v0.0.0-20241107160307-0064ad7bd060/go.mod h1:9B1MYPoLtP9tqjWxcbUNVpwxy68zOH/3EIP6c31dAM0=
+github.com/perdasilva/library-go v0.0.0-20241112122126-e7ab26a4d87e h1:/QrwDEJ/DUD21v0lo3v9ZyRmyL/qh98+QxR4ScUGP7M=
+github.com/perdasilva/library-go v0.0.0-20241112122126-e7ab26a4d87e/go.mod h1:KnPvqYNAdwqOlcYlfgCzUldsu8E4BnzK7GcOcjqhE8w=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pkg/profile v1.7.0 h1:hnbDkaNWPCLMO9wGLdBFTIZvzDrDfBM2072E1S9gJkA=
