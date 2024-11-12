@@ -187,8 +187,6 @@ github.com/openshift/build-machinery-go v0.0.0-20241031155326-6ae126a9cb72 h1:kM
 github.com/openshift/build-machinery-go v0.0.0-20241031155326-6ae126a9cb72/go.mod h1:8jcm8UPtg2mCAsxfqKil1xrmRMI3a+XU2TZ9fF8A7TE=
 github.com/openshift/client-go v0.0.0-20241107164952-923091dd2b1a h1:h3F55x+zOXwSG4okUlXmOlU/5CQ7Ve2HKxYjseJPVoY=
 github.com/openshift/client-go v0.0.0-20241107164952-923091dd2b1a/go.mod h1:JBIcn1JfD/JCpGYnRRT0+HLxrleF/Y7T3Y/t0p8o5jk=
-github.com/openshift/library-go v0.0.0-20241107160307-0064ad7bd060 h1:jiDC7d8d+jmjv2WfiMY0+Uf55q11MGyYkGGqXnfqWTU=
-github.com/openshift/library-go v0.0.0-20241107160307-0064ad7bd060/go.mod h1:9B1MYPoLtP9tqjWxcbUNVpwxy68zOH/3EIP6c31dAM0=
 github.com/operator-framework/api v0.27.0 h1:OrVaGKZJvbZo58HTv2guz7aURkhVKYhFqZ/6VpifiXI=
 github.com/operator-framework/api v0.27.0/go.mod h1:lg2Xx+S8NQWGYlEOvFwQvH46E5EK5IrAIL7HWfAhciM=
 github.com/operator-framework/catalogd v0.23.0 h1:LAuiYuFftCQp6Jvol9pWbyvOY04QP7xH0dcf9ZO9RcE=
@@ -200,6 +198,8 @@ github.com/operator-framework/operator-controller v0.15.0/go.mod h1:6U2jhRr+T/d1
 github.com/operator-framework/operator-registry v1.47.0 h1:Imr7X/W6FmXczwpIOXfnX8d6Snr1dzwWxkMG+lLAfhg=
 github.com/operator-framework/operator-registry v1.47.0/go.mod h1:CJ3KcP8uRxtC8l9caM1RsV7r7jYlKAd452tcxcgXyTQ=
 github.com/orisano/pixelmatch v0.0.0-20220722002657-fb0b55479cde/go.mod h1:nZgzbfBr3hhjoZnS66nKrHmduYNpc34ny7RK4z5/HM0=
+github.com/perdasilva/library-go v0.0.0-20241107160307-0064ad7bd060 h1:QdLyxglJyDKVcgTaiPMB4OTNnsb07466QqfEtqJUPy0=
+github.com/perdasilva/library-go v0.0.0-20241107160307-0064ad7bd060/go.mod h1:9B1MYPoLtP9tqjWxcbUNVpwxy68zOH/3EIP6c31dAM0=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pkg/profile v1.7.0 h1:hnbDkaNWPCLMO9wGLdBFTIZvzDrDfBM2072E1S9gJkA=
