@@ -7,7 +7,7 @@ toolchain go1.22.7
 require (
 	github.com/blang/semver/v4 v4.0.0
 	github.com/go-logr/logr v1.4.2
-	github.com/openshift/api v0.0.0-20241109205306-a2817b89f7e0
+	github.com/openshift/api v0.0.0-20241112230646-1bc89e052086
 	github.com/openshift/build-machinery-go v0.0.0-20241031155326-6ae126a9cb72
 	github.com/openshift/client-go v0.0.0-20241107164952-923091dd2b1a
 	github.com/openshift/library-go v0.0.0-20241107160307-0064ad7bd060
