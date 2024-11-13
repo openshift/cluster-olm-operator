@@ -31,9 +31,6 @@ require (
 	sigs.k8s.io/controller-runtime v0.19.0
 )
 
-// TODO: replace after library-go PR merges
-replace github.com/openshift/library-go => github.com/perdasilva/library-go v0.0.0-20241107160307-0064ad7bd060
-
 require (
 	github.com/Masterminds/semver/v3 v3.3.0 // indirect
 	github.com/Masterminds/squirrel v1.5.4 // indirect
