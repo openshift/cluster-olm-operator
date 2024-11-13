@@ -7,10 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openshift/library-go/pkg/apiserver/jsonpatch"
-	"k8s.io/apimachinery/pkg/api/equality"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-
 	operatorv1 "github.com/openshift/api/operator/v1"
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	configinformer "github.com/openshift/client-go/config/informers/externalversions"
@@ -191,94 +187,6 @@ func NewClusterCatalogClient(dynClient dynamic.Interface) *ClusterCatalogClient 
 type OperatorClient struct {
 	clientset operatorclient.Interface
 	informers operatorinformers.SharedInformerFactory
-}
-
-func (o OperatorClient) ApplyOperatorSpec(ctx context.Context, fieldManager string, applyConfiguration *operatorv1apply.OperatorSpecApplyConfiguration) error {
-	if applyConfiguration == nil {
-		return fmt.Errorf("applyConfiguration must have a value")
-	}
-
-	desiredSpec := &operatorv1apply.OLMSpecApplyConfiguration{
-		OperatorSpecApplyConfiguration: *applyConfiguration,
-	}
-	desired := operatorv1apply.OLM(globalConfigName)
-	desired.WithSpec(desiredSpec)
-
-	instance, err := o.informers.Operator().V1().OLMs().Lister().Get(globalConfigName)
-	switch {
-	case apierrors.IsNotFound(err):
-	// do nothing and proceed with the apply
-	case err != nil:
-		return fmt.Errorf("unable to get operator configuration: %w", err)
-	default:
-		original, err := operatorv1apply.ExtractOLM(instance, fieldManager)
-		if err != nil {
-			return fmt.Errorf("unable to extract operator configuration: %w", err)
-		}
-		if equality.Semantic.DeepEqual(original, desired) {
-			return nil
-		}
-	}
-
-	_, err = o.clientset.OperatorV1().OLMs().Apply(ctx, desired, metav1.ApplyOptions{
-		Force:        true,
-		FieldManager: fieldManager,
-	})
-	if err != nil {
-		return fmt.Errorf("unable to Apply for operator using fieldManager %q: %w", fieldManager, err)
-	}
-
-	return nil
-}
-
-func (o OperatorClient) ApplyOperatorStatus(ctx context.Context, fieldManager string, applyConfiguration *operatorv1apply.OperatorStatusApplyConfiguration) error {
-	if applyConfiguration == nil {
-		return fmt.Errorf("applyConfiguration must have a value")
-	}
-
-	desiredStatus := &operatorv1apply.OLMStatusApplyConfiguration{
-		OperatorStatusApplyConfiguration: *applyConfiguration,
-	}
-	desired := operatorv1apply.OLM(globalConfigName)
-	desired.WithStatus(desiredStatus)
-
-	instance, err := o.informers.Operator().V1().OLMs().Lister().Get(globalConfigName)
-	switch {
-	case apierrors.IsNotFound(err):
-		// do nothing and proceed with the apply
-	case err != nil:
-		return fmt.Errorf("unable to get operator configuration: %w", err)
-	default:
-		original, err := operatorv1apply.ExtractOLM(instance, fieldManager)
-		if err != nil {
-			return fmt.Errorf("unable to extract operator configuration: %w", err)
-		}
-		if equality.Semantic.DeepEqual(original, desired) {
-			return nil
-		}
-	}
-
-	_, err = o.clientset.OperatorV1().OLMs().ApplyStatus(ctx, desired, metav1.ApplyOptions{
-		Force:        true,
-		FieldManager: fieldManager,
-	})
-	if err != nil {
-		return fmt.Errorf("unable to ApplyStatus for operator using fieldManager %q: %w", fieldManager, err)
-	}
-
-	return nil
-}
-
-func (o OperatorClient) PatchOperatorStatus(ctx context.Context, jsonPatch *jsonpatch.PatchSet) error {
-	jsonPatchBytes, err := jsonPatch.Marshal()
-	if err != nil {
-		return err
-	}
-	_, err = o.clientset.OperatorV1().OLMs().Patch(ctx, globalConfigName, types.JSONPatchType, jsonPatchBytes, metav1.PatchOptions{}, "/status")
-	if err != nil {
-		return fmt.Errorf("unable to PatchOperatorStatus for operator using fieldManager %q: %w", fieldManager, err)
-	}
-	return nil
 }
 
 func (o OperatorClient) Informer() cache.SharedIndexInformer {

@@ -4,6 +4,8 @@ go 1.22.5
 
 toolchain go1.22.7
 
+replace github.com/openshift/library-go => github.com/gallettilance/library-go v0.0.0-20240916114351-b183885b7d04
+
 require (
 	github.com/blang/semver/v4 v4.0.0
 	github.com/go-logr/logr v1.4.2
