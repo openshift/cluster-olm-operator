@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"k8s.io/apimachinery/pkg/api/equality"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"strings"
 	"time"
+
+	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/utils/clock"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
@@ -92,6 +94,7 @@ func New(cc *controllercmd.ControllerContext) (*Clients, error) {
 	opClient := &OperatorClient{
 		clientset: operatorClientset,
 		informers: operatorInformersFactory,
+		clock:     clock.RealClock{},
 	}
 
 	configClient, err := configclient.NewForConfig(cc.KubeConfig)
@@ -190,6 +193,7 @@ func NewClusterCatalogClient(dynClient dynamic.Interface) *ClusterCatalogClient 
 type OperatorClient struct {
 	clientset operatorclient.Interface
 	informers operatorinformers.SharedInformerFactory
+	clock     clock.PassiveClock
 }
 
 func (o OperatorClient) Informer() cache.SharedIndexInformer {
@@ -249,6 +253,7 @@ func (o OperatorClient) ApplyOperatorStatus(ctx context.Context, fieldManager st
 	switch {
 	case apierrors.IsNotFound(err):
 		// do nothing and proceed with the apply
+		v1helpers.SetApplyConditionsLastTransitionTime(o.clock, &applyConfiguration.Conditions, nil)
 	case err != nil:
 		return fmt.Errorf("unable to get operator configuration: %w", err)
 	default:
