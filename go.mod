@@ -32,7 +32,7 @@ require (
 )
 
 // TODO: replace after library-go PR merges
-replace github.com/openshift/library-go => github.com/perdasilva/library-go v0.0.0-20241112122126-e7ab26a4d87e
+replace github.com/openshift/library-go => github.com/perdasilva/library-go v0.0.0-20241107160307-0064ad7bd060
 
 require (
 	github.com/Masterminds/semver/v3 v3.3.0 // indirect
