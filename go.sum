@@ -55,8 +55,6 @@ github.com/fsnotify/fsnotify v1.7.0 h1:8JEhPFa5W2WU7YfeZzPNqzMP6Lwt7L2715Ggo0nos
 github.com/fsnotify/fsnotify v1.7.0/go.mod h1:40Bi/Hjc2AVfZrqy+aj+yEI+/bRxZnMJyTJwOpGvigM=
 github.com/fxamacker/cbor/v2 v2.7.0 h1:iM5WgngdRBanHcxugY4JySA0nk1wZorNOpTgCMedv5E=
 github.com/fxamacker/cbor/v2 v2.7.0/go.mod h1:pxXPTn3joSm21Gbwsv0w9OSA2y1HFR9qXEeXQVeNoDQ=
-github.com/gallettilance/library-go v0.0.0-20240916114351-b183885b7d04 h1:XAvDc5mVQFf9ieQA1H0K0oTTRVhWUfUCzaLiAvVLjRI=
-github.com/gallettilance/library-go v0.0.0-20240916114351-b183885b7d04/go.mod h1:YerbLMQUUVc7KDqToMf6u/tabR3O9xTyJB2fFBh7PSc=
 github.com/go-gorp/gorp/v3 v3.1.0 h1:ItKF/Vbuj31dmV4jxA1qblpSwkl9g1typ24xoe70IGs=
 github.com/go-gorp/gorp/v3 v3.1.0/go.mod h1:dLEjIyyRNiXvNZ8PSmzpt1GsWAUK8kjVhEpjH8TixEw=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
@@ -189,6 +187,8 @@ github.com/openshift/build-machinery-go v0.0.0-20241031155326-6ae126a9cb72 h1:kM
 github.com/openshift/build-machinery-go v0.0.0-20241031155326-6ae126a9cb72/go.mod h1:8jcm8UPtg2mCAsxfqKil1xrmRMI3a+XU2TZ9fF8A7TE=
 github.com/openshift/client-go v0.0.0-20241107164952-923091dd2b1a h1:h3F55x+zOXwSG4okUlXmOlU/5CQ7Ve2HKxYjseJPVoY=
 github.com/openshift/client-go v0.0.0-20241107164952-923091dd2b1a/go.mod h1:JBIcn1JfD/JCpGYnRRT0+HLxrleF/Y7T3Y/t0p8o5jk=
+github.com/openshift/library-go v0.0.0-20241107160307-0064ad7bd060 h1:jiDC7d8d+jmjv2WfiMY0+Uf55q11MGyYkGGqXnfqWTU=
+github.com/openshift/library-go v0.0.0-20241107160307-0064ad7bd060/go.mod h1:9B1MYPoLtP9tqjWxcbUNVpwxy68zOH/3EIP6c31dAM0=
 github.com/operator-framework/api v0.27.0 h1:OrVaGKZJvbZo58HTv2guz7aURkhVKYhFqZ/6VpifiXI=
 github.com/operator-framework/api v0.27.0/go.mod h1:lg2Xx+S8NQWGYlEOvFwQvH46E5EK5IrAIL7HWfAhciM=
 github.com/operator-framework/catalogd v0.23.0 h1:LAuiYuFftCQp6Jvol9pWbyvOY04QP7xH0dcf9ZO9RcE=
