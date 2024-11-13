@@ -9,10 +9,10 @@ replace github.com/openshift/library-go => github.com/gallettilance/library-go v
 require (
 	github.com/blang/semver/v4 v4.0.0
 	github.com/go-logr/logr v1.4.2
-	github.com/openshift/api v0.0.0-20241107155230-d37bb9f7e380
-	github.com/openshift/build-machinery-go v0.0.0-20240613134303-8359781da660
+	github.com/openshift/api v0.0.0-20241112230646-1bc89e052086
+	github.com/openshift/build-machinery-go v0.0.0-20241031155326-6ae126a9cb72
 	github.com/openshift/client-go v0.0.0-20241107164952-923091dd2b1a
-	github.com/openshift/library-go v0.0.0-20240905123346-5bdbfe35a6f5
+	github.com/openshift/library-go v0.0.0-20241107160307-0064ad7bd060
 	github.com/operator-framework/catalogd v0.23.0
 	github.com/operator-framework/helm-operator-plugins v0.5.0
 	github.com/operator-framework/operator-controller v0.15.0
@@ -132,7 +132,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apiserver v0.31.1 // indirect
 	k8s.io/kms v0.31.1 // indirect
-	k8s.io/kube-aggregator v0.31.0 // indirect
+	k8s.io/kube-aggregator v0.31.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.30.3 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
