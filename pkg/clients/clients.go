@@ -21,7 +21,7 @@ import (
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
-	ocv1alpha1 "github.com/operator-framework/operator-controller/api/v1alpha1"
+	ocv1 "github.com/operator-framework/operator-controller/api/v1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,7 +39,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
-	catalogdv1alpha1 "github.com/operator-framework/catalogd/api/core/v1alpha1"
+	catalogdv1 "github.com/operator-framework/catalogd/api/v1"
 )
 
 const defaultResyncPeriod = 10 * time.Minute
@@ -157,7 +157,7 @@ func (ce ClusterExtensionClient) Informer() informers.GenericInformer {
 
 func NewClusterExtensionClient(dynClient dynamic.Interface) *ClusterExtensionClient {
 	infFact := dynamicinformer.NewDynamicSharedInformerFactory(dynClient, defaultResyncPeriod)
-	clusterExtensionGVR := ocv1alpha1.GroupVersion.WithResource("clusterextensions")
+	clusterExtensionGVR := ocv1.GroupVersion.WithResource("clusterextensions")
 	inf := infFact.ForResource(clusterExtensionGVR)
 
 	return &ClusterExtensionClient{
@@ -181,7 +181,7 @@ func (cc *ClusterCatalogClient) Get(key types.NamespacedName) (runtime.Object, e
 
 func NewClusterCatalogClient(dynClient dynamic.Interface) *ClusterCatalogClient {
 	infFact := dynamicinformer.NewDynamicSharedInformerFactory(dynClient, defaultResyncPeriod)
-	clusterCatalogGVR := catalogdv1alpha1.GroupVersion.WithResource("clustercatalogs")
+	clusterCatalogGVR := catalogdv1.GroupVersion.WithResource("clustercatalogs")
 	inf := infFact.ForResource(clusterCatalogGVR)
 
 	return &ClusterCatalogClient{

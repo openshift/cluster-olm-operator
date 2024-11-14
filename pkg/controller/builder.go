@@ -29,7 +29,7 @@ import (
 	"github.com/openshift/cluster-olm-operator/pkg/clients"
 	"github.com/openshift/library-go/pkg/operator/loglevel"
 
-	catalogdv1alpha1 "github.com/operator-framework/catalogd/api/core/v1alpha1"
+	catalogdv1 "github.com/operator-framework/catalogd/api/v1"
 )
 
 type Builder struct {
@@ -113,7 +113,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 				return nil
 			}
 
-			if manifestGVK.Kind == "ClusterCatalog" && manifestGVK.Group == catalogdv1alpha1.GroupVersion.Group {
+			if manifestGVK.Kind == "ClusterCatalog" && manifestGVK.Group == catalogdv1.GroupVersion.Group {
 				controllerName := controllerNameForObject(namePrefix, &manifest)
 				clusterCatalogControllers[controllerName] = NewDynamicRequiredManifestController(
 					controllerName,
@@ -122,7 +122,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 						Namespace: manifest.GetNamespace(),
 						Name:      manifest.GetName(),
 					},
-					catalogdv1alpha1.GroupVersion.WithResource("clustercatalogs"),
+					catalogdv1.GroupVersion.WithResource("clustercatalogs"),
 					b.Clients.OperatorClient,
 					b.Clients.DynamicClient,
 					b.Clients.ClusterCatalogClient,
