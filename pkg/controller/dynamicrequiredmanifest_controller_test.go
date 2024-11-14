@@ -188,7 +188,7 @@ func TestUnstructuredShouldUpdateFunc(t *testing.T) {
 			manifest: []byte(requiredYAML),
 			existing: &unstructured.Unstructured{
 				Object: map[string]interface{}{
-					"apiVersion": "olm.operatorframework.io/v1alpha1",
+					"apiVersion": "olm.operatorframework.io/v1",
 					"kind":       "ClusterCatalog",
 					"metadata": map[string]interface{}{
 						"name": "openshift-certified-operators",
@@ -212,7 +212,7 @@ func TestUnstructuredShouldUpdateFunc(t *testing.T) {
 			manifest: []byte(requiredYAML),
 			existing: &unstructured.Unstructured{
 				Object: map[string]interface{}{
-					"apiVersion": "olm.operatorframework.io/v1alpha1",
+					"apiVersion": "olm.operatorframework.io/v1",
 					"kind":       "ClusterCatalog",
 					"metadata": map[string]interface{}{
 						"name": "openshift-certified-operators",
@@ -248,7 +248,7 @@ func TestUnstructuredShouldUpdateFunc(t *testing.T) {
 
 const requiredYAML = `
 ---
-apiVersion: olm.operatorframework.io/v1alpha1
+apiVersion: olm.operatorframework.io/v1
 kind: ClusterCatalog
 metadata:
   name: openshift-certified-operators
