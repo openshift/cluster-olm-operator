@@ -208,7 +208,7 @@ github.com/modern-go/reflect2
 # github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 ## explicit
 github.com/munnerz/goautoneg
-# github.com/openshift/api v0.0.0-20241112230646-1bc89e052086
+# github.com/openshift/api v0.0.0-20241113165232-7ba4661b0aa5
 ## explicit; go 1.22.0
 github.com/openshift/api
 github.com/openshift/api/apiserver
@@ -319,8 +319,9 @@ github.com/openshift/client-go/operator/informers/externalversions/operator/v1
 github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1
 github.com/openshift/client-go/operator/listers/operator/v1
 github.com/openshift/client-go/operator/listers/operator/v1alpha1
-# github.com/openshift/library-go v0.0.0-20241107160307-0064ad7bd060 => github.com/gallettilance/library-go v0.0.0-20240916114351-b183885b7d04
+# github.com/openshift/library-go v0.0.0-20241113144043-e59cd12636ac
 ## explicit; go 1.22.0
+github.com/openshift/library-go/pkg/apiserver/jsonpatch
 github.com/openshift/library-go/pkg/authorization/hardcodedauthorizer
 github.com/openshift/library-go/pkg/config/client
 github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers
@@ -1461,4 +1462,3 @@ sigs.k8s.io/structured-merge-diff/v4/value
 ## explicit; go 1.12
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
-# github.com/openshift/library-go => github.com/gallettilance/library-go v0.0.0-20240916114351-b183885b7d04
