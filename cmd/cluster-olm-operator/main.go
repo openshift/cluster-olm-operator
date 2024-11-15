@@ -30,7 +30,7 @@ import (
 	"github.com/openshift/cluster-olm-operator/pkg/controller"
 	"github.com/openshift/cluster-olm-operator/pkg/version"
 
-	catalogdv1alpha1 "github.com/operator-framework/catalogd/api/core/v1alpha1"
+	catalogdv1 "github.com/operator-framework/catalogd/api/v1"
 )
 
 func main() {
@@ -81,14 +81,14 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		return err
 	}
 
-	clusterCatalogGvk := catalogdv1alpha1.GroupVersion.WithKind("ClusterCatalog")
+	clusterCatalogGvk := catalogdv1.GroupVersion.WithKind("ClusterCatalog")
 	cb := controller.Builder{
 		Assets:            os.DirFS("/operand-assets"),
 		Clients:           cl,
 		ControllerContext: cc,
 		KnownRESTMappings: map[schema.GroupVersionKind]*meta.RESTMapping{
 			clusterCatalogGvk: {
-				Resource:         catalogdv1alpha1.GroupVersion.WithResource("clustercatalogs"),
+				Resource:         catalogdv1.GroupVersion.WithResource("clustercatalogs"),
 				GroupVersionKind: clusterCatalogGvk,
 				Scope:            meta.RESTScopeRoot,
 			},

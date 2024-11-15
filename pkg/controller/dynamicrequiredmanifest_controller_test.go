@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 
-	catalogdv1alpha1 "github.com/operator-framework/catalogd/api/core/v1alpha1"
+	catalogdv1 "github.com/operator-framework/catalogd/api/v1"
 )
 
 func containsError(expected error) func(t *testing.T, err error) {
@@ -145,7 +145,7 @@ func TestDynamicRequiredManifestControllerSync(t *testing.T) {
 				key:         types.NamespacedName{Name: "foo"},
 				managedFunc: func() (bool, error) { return true, nil },
 				objectGetFunc: func(_ types.NamespacedName) (runtime.Object, error) {
-					return nil, apierrors.NewNotFound(catalogdv1alpha1.GroupVersion.WithResource("clusterresources").GroupResource(), "foo")
+					return nil, apierrors.NewNotFound(catalogdv1.GroupVersion.WithResource("clusterresources").GroupResource(), "foo")
 				},
 				shouldUpdateFunc: func(_ []byte, _ runtime.Object) (bool, error) {
 					return true, nil
@@ -188,7 +188,7 @@ func TestUnstructuredShouldUpdateFunc(t *testing.T) {
 			manifest: []byte(requiredYAML),
 			existing: &unstructured.Unstructured{
 				Object: map[string]interface{}{
-					"apiVersion": "olm.operatorframework.io/v1alpha1",
+					"apiVersion": "olm.operatorframework.io/v1",
 					"kind":       "ClusterCatalog",
 					"metadata": map[string]interface{}{
 						"name": "openshift-certified-operators",
@@ -212,7 +212,7 @@ func TestUnstructuredShouldUpdateFunc(t *testing.T) {
 			manifest: []byte(requiredYAML),
 			existing: &unstructured.Unstructured{
 				Object: map[string]interface{}{
-					"apiVersion": "olm.operatorframework.io/v1alpha1",
+					"apiVersion": "olm.operatorframework.io/v1",
 					"kind":       "ClusterCatalog",
 					"metadata": map[string]interface{}{
 						"name": "openshift-certified-operators",
@@ -248,7 +248,7 @@ func TestUnstructuredShouldUpdateFunc(t *testing.T) {
 
 const requiredYAML = `
 ---
-apiVersion: olm.operatorframework.io/v1alpha1
+apiVersion: olm.operatorframework.io/v1
 kind: ClusterCatalog
 metadata:
   name: openshift-certified-operators
