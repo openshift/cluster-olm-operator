@@ -4,8 +4,8 @@ metadata:
   name: cluster-olm-operator-role
   annotations:
     include.release.openshift.io/self-managed-high-availability: "true"
-    release.openshift.io/feature-set: TechPreviewNoUpgrade
     capability.openshift.io/name: "OperatorLifecycleManagerV1"
+    release.openshift.io/feature-set: TechPreviewNoUpgrade
 subjects:
 - kind: ServiceAccount
   name: cluster-olm-operator
