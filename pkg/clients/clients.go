@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -214,7 +215,7 @@ func (o OperatorClient) ApplyOperatorSpec(ctx context.Context, fieldManager stri
 	instance, err := o.informers.Operator().V1().OLMs().Lister().Get(globalConfigName)
 	switch {
 	case apierrors.IsNotFound(err):
-	// do nothing and proceed with the apply
+		// do nothing and proceed with the apply
 	case err != nil:
 		return fmt.Errorf("unable to get operator configuration: %w", err)
 	default:
@@ -238,37 +239,77 @@ func (o OperatorClient) ApplyOperatorSpec(ctx context.Context, fieldManager stri
 	return nil
 }
 
-func (o OperatorClient) ApplyOperatorStatus(ctx context.Context, fieldManager string, applyConfiguration *operatorv1apply.OperatorStatusApplyConfiguration) error {
-	if applyConfiguration == nil {
-		return fmt.Errorf("applyConfiguration must have a value")
+func (o OperatorClient) ApplyOperatorStatus(ctx context.Context, fieldManager string, desiredStatus *operatorv1apply.OperatorStatusApplyConfiguration) error {
+	if desiredStatus == nil {
+		panic("desiredStatus is nil")
+	}
+	desiredOLMStatus := &operatorv1apply.OLMStatusApplyConfiguration{
+		OperatorStatusApplyConfiguration: *desiredStatus,
 	}
 
-	desiredStatus := &operatorv1apply.OLMStatusApplyConfiguration{
-		OperatorStatusApplyConfiguration: *applyConfiguration,
+	for i, curr := range desiredOLMStatus.Conditions {
+		// panicking so we can quickly find it and fix the source
+		if len(ptr.Deref(curr.Type, "")) == 0 {
+			panic(fmt.Sprintf(".status.conditions[%d].type is missing", i))
+		}
+		if len(ptr.Deref(curr.Status, "")) == 0 {
+			panic(fmt.Sprintf(".status.conditions[%q].status is missing", *curr.Type))
+		}
 	}
-	desired := operatorv1apply.OLM(globalConfigName)
-	desired.WithStatus(desiredStatus)
 
 	instance, err := o.informers.Operator().V1().OLMs().Lister().Get(globalConfigName)
 	switch {
 	case apierrors.IsNotFound(err):
-		// do nothing and proceed with the apply
-		v1helpers.SetApplyConditionsLastTransitionTime(o.clock, &applyConfiguration.Conditions, nil)
+		// set last transitionTimes and then apply
+		// If our cache improperly 404's (the lister wasn't synchronized), then we will improperly reset all the last transition times.
+		// This isn't ideal, but we shouldn't hit this case unless a loop isn't waiting for HasSynced.
+		v1helpers.SetApplyConditionsLastTransitionTime(o.clock, &desiredOLMStatus.Conditions, nil)
 	case err != nil:
 		return fmt.Errorf("unable to get operator configuration: %w", err)
 	default:
-		original, err := operatorv1apply.ExtractOLM(instance, fieldManager)
+		previouslyDesiredOLMStatus, err := extractOLMStatus(instance, fieldManager)
 		if err != nil {
-			return fmt.Errorf("unable to extract operator configuration: %w", err)
+			return err
 		}
-		if equality.Semantic.DeepEqual(original.Status, desired.Status) {
+
+		// set last transitionTimes to properly calculate a difference
+		// It is possible for last transition time to shift a couple times until the cache updates to have the condition[*].status match,
+		// but it will eventually settle.  The failing sequence looks like
+		/*
+			1. type=foo, status=false, time=t0.Now
+			2. type=foo, status=true, time=t1.Now
+			3. rapid update happens and the cache still indicates #1
+			4. type=foo, status=true, time=t2.Now (this *should* be t1.Now)
+		*/
+		// Eventually the cache updates to see at #2 and we stop applying new times.
+		// This only becomes pathological if the condition is also flapping, but if that happens the time should also update.
+		switch {
+		case desiredOLMStatus.Conditions != nil && previouslyDesiredOLMStatus != nil:
+			v1helpers.SetApplyConditionsLastTransitionTime(o.clock, &desiredStatus.Conditions, previouslyDesiredOLMStatus.Conditions)
+		case desiredOLMStatus.Conditions != nil && previouslyDesiredOLMStatus == nil:
+			v1helpers.SetApplyConditionsLastTransitionTime(o.clock, &desiredStatus.Conditions, nil)
+		}
+
+		// canonicalize so the DeepEqual works consistently
+		canonicalizeOLMStatus(previouslyDesiredOLMStatus)
+		canonicalizeOLMStatus(desiredOLMStatus)
+
+		previouslyDesiredStatusObj, err := toStatusObj(previouslyDesiredOLMStatus)
+		if err != nil {
+			return err
+		}
+		desiredStatusObj, err := toStatusObj(desiredOLMStatus)
+		if err != nil {
+			return err
+		}
+		if equality.Semantic.DeepEqual(previouslyDesiredStatusObj, desiredStatusObj) {
+			// nothing to apply, so return early
 			return nil
 		}
 	}
 
-	v1helpers.SetApplyConditionsLastTransitionTime(o.clock, &applyConfiguration.Conditions, nil)
-
-	_, err = o.clientset.OperatorV1().OLMs().ApplyStatus(ctx, desired, metav1.ApplyOptions{
+	desiredObj := operatorv1apply.OLM(globalConfigName).WithStatus(desiredOLMStatus)
+	_, err = o.clientset.OperatorV1().OLMs().ApplyStatus(ctx, desiredObj, metav1.ApplyOptions{
 		Force:        true,
 		FieldManager: fieldManager,
 	})
@@ -277,6 +318,37 @@ func (o OperatorClient) ApplyOperatorStatus(ctx context.Context, fieldManager st
 	}
 
 	return nil
+}
+
+func extractOLMStatus(instance *operatorv1.OLM, fieldManager string) (*operatorv1apply.OLMStatusApplyConfiguration, error) {
+	applyInstance, err := operatorv1apply.ExtractOLMStatus(instance, fieldManager)
+	if err != nil {
+		return nil, fmt.Errorf("unable to extract operator configuration: %w", err)
+	}
+	if applyInstance == nil {
+		return nil, nil
+	}
+	return applyInstance.Status, nil
+}
+
+func canonicalizeOLMStatus(obj *operatorv1apply.OLMStatusApplyConfiguration) {
+	if obj == nil {
+		return
+	}
+	slices.SortStableFunc(obj.Conditions, v1helpers.CompareOperatorConditionByType)
+	slices.SortStableFunc(obj.Generations, v1helpers.CompareGenerationStatusByKeys)
+}
+
+func toStatusObj(in *operatorv1apply.OLMStatusApplyConfiguration) (*operatorv1.OperatorStatus, error) {
+	jsonBytes, err := json.Marshal(in)
+	if err != nil {
+		return nil, err
+	}
+	ret := &operatorv1.OperatorStatus{}
+	if err := json.Unmarshal(jsonBytes, ret); err != nil {
+		return nil, fmt.Errorf("unable to deserialize: %w", err)
+	}
+	return ret, nil
 }
 
 func (o OperatorClient) PatchOperatorStatus(ctx context.Context, jsonPatch *jsonpatch.PatchSet) error {
