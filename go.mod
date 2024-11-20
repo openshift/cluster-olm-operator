@@ -31,6 +31,8 @@ require (
 	sigs.k8s.io/controller-runtime v0.19.0
 )
 
+replace github.com/openshift/api => github.com/joelanford/openshift-api v0.0.0-20241119141819-917f3bfd3d28
+
 require (
 	github.com/Masterminds/semver/v3 v3.3.0 // indirect
 	github.com/Masterminds/squirrel v1.5.4 // indirect
