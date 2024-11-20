@@ -4,7 +4,6 @@ metadata:
   namespace: openshift-cluster-olm-operator
   name: cluster-olm-operator
   annotations:
-    include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     capability.openshift.io/name: "OperatorLifecycleManagerV1"
 spec:
