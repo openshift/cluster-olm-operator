@@ -7,7 +7,7 @@ toolchain go1.22.7
 require (
 	github.com/blang/semver/v4 v4.0.0
 	github.com/go-logr/logr v1.4.2
-	github.com/openshift/api v0.0.0-20241114175301-1d987ad446cf
+	github.com/openshift/api v0.0.0-20241121204516-053bb8a33f6d
 	github.com/openshift/build-machinery-go v0.0.0-20241031155326-6ae126a9cb72
 	github.com/openshift/client-go v0.0.0-20241107164952-923091dd2b1a
 	github.com/openshift/library-go v0.0.0-20241107160307-0064ad7bd060
@@ -30,8 +30,6 @@ require (
 	k8s.io/utils v0.0.0-20240921022957-49e7df575cb6
 	sigs.k8s.io/controller-runtime v0.19.0
 )
-
-replace github.com/openshift/api => github.com/joelanford/openshift-api v0.0.0-20241119141819-917f3bfd3d28
 
 require (
 	github.com/Masterminds/semver/v3 v3.3.0 // indirect
