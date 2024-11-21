@@ -5,7 +5,6 @@ metadata:
   annotations:
     include.release.openshift.io/self-managed-high-availability: "true"
     capability.openshift.io/name: "OperatorLifecycleManagerV1"
-    release.openshift.io/feature-set: TechPreviewNoUpgrade
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/enforce-version: latest
     workload.openshift.io/allowed: "management"
