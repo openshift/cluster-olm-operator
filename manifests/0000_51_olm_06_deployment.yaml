@@ -36,6 +36,7 @@ spec:
           volumeMounts:
             - mountPath: /operand-assets
               name: operand-assets
+          terminationMessagePolicy: FallbackToLogsOnError
         - name: copy-operator-controller-manifests
           image: quay.io/openshift/origin-olm-operator-controller:latest
           imagePullPolicy: IfNotPresent
@@ -47,6 +48,7 @@ spec:
           volumeMounts:
           - mountPath: /operand-assets
             name: operand-assets
+          terminationMessagePolicy: FallbackToLogsOnError
       containers:
       - name: cluster-olm-operator
         image: quay.io/openshift/origin-cluster-olm-operator:latest
