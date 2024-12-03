@@ -12,9 +12,12 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/utils/clock"
 
+	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	configinformer "github.com/openshift/client-go/config/informers/externalversions"
+	"github.com/openshift/client-go/config/informers/externalversions/config"
+	configinformerv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	operatorv1apply "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 	operatorclient "github.com/openshift/client-go/operator/clientset/versioned"
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
@@ -54,6 +57,7 @@ type Clients struct {
 	OperatorInformers          operatorinformers.SharedInformerFactory
 	ClusterExtensionClient     *ClusterExtensionClient
 	ClusterCatalogClient       *ClusterCatalogClient
+	ProxyClient                *ProxyClient
 	ConfigClient               configclient.Interface
 	KubeInformerFactory        informers.SharedInformerFactory
 	ConfigInformerFactory      configinformer.SharedInformerFactory
@@ -103,6 +107,8 @@ func New(cc *controllercmd.ControllerContext) (*Clients, error) {
 		return nil, err
 	}
 
+	configInformerFactory := configinformer.NewSharedInformerFactory(configClient, defaultResyncPeriod)
+
 	return &Clients{
 		KubeClient:             kubeClient,
 		APIExtensionsClient:    apiExtensionsClient,
@@ -112,9 +118,10 @@ func New(cc *controllercmd.ControllerContext) (*Clients, error) {
 		OperatorInformers:      operatorInformersFactory,
 		ClusterExtensionClient: NewClusterExtensionClient(dynClient),
 		ClusterCatalogClient:   NewClusterCatalogClient(dynClient),
+		ProxyClient:            NewProxyClient(configInformerFactory),
 		ConfigClient:           configClient,
 		KubeInformerFactory:    informers.NewSharedInformerFactory(kubeClient, defaultResyncPeriod),
-		ConfigInformerFactory:  configinformer.NewSharedInformerFactory(configClient, defaultResyncPeriod),
+		ConfigInformerFactory:  configInformerFactory,
 	}, nil
 }
 
@@ -124,6 +131,7 @@ func (c *Clients) StartInformers(ctx context.Context) {
 	c.OperatorInformers.Start(ctx.Done())
 	c.ClusterExtensionClient.factory.Start(ctx.Done())
 	c.ClusterCatalogClient.factory.Start(ctx.Done())
+	c.ProxyClient.factory.Start(ctx.Done())
 	if c.KubeInformersForNamespaces != nil {
 		c.KubeInformersForNamespaces.Start(ctx.Done())
 	}
@@ -186,6 +194,34 @@ func NewClusterCatalogClient(dynClient dynamic.Interface) *ClusterCatalogClient 
 	inf := infFact.ForResource(clusterCatalogGVR)
 
 	return &ClusterCatalogClient{
+		factory:  infFact,
+		informer: inf,
+	}
+}
+
+type ProxyClientInterface interface {
+	Get(key string) (*configv1.Proxy, error)
+}
+
+type ProxyClient struct {
+	factory  configinformer.SharedInformerFactory
+	informer configinformerv1.ProxyInformer
+}
+
+func (pc *ProxyClient) Informer() cache.SharedIndexInformer {
+	return pc.informer.Informer()
+}
+
+func (pc *ProxyClient) Get(key string) (*configv1.Proxy, error) {
+	return pc.informer.Lister().Get(key)
+}
+
+func NewProxyClient(infFact configinformer.SharedInformerFactory) *ProxyClient {
+	inf := config.New(infFact, "", func(options *metav1.ListOptions) {
+		options.FieldSelector = "metadata.name=cluster"
+	}).V1().Proxies()
+
+	return &ProxyClient{
 		factory:  infFact,
 		informer: inf,
 	}
