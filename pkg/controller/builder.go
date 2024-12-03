@@ -2,6 +2,7 @@ package controller
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -18,6 +19,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/staticresourcecontroller"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -104,6 +106,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 					b.Clients.KubeInformerFactory.Apps().V1().Deployments(),
 					nil,
 					[]deploymentcontroller.ManifestHookFunc{
+						replaceEnvironmentHook("env: {}", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"),
 						replaceVerbosityHook("${LOG_VERBOSITY}"),
 						replaceImageHook("${CATALOGD_IMAGE}", "CATALOGD_IMAGE"),
 						replaceImageHook("${OPERATOR_CONTROLLER_IMAGE}", "OPERATOR_CONTROLLER_IMAGE"),
@@ -173,6 +176,27 @@ func replaceVerbosityHook(placeholder string) deploymentcontroller.ManifestHookF
 	return func(spec *operatorv1.OperatorSpec, deployment []byte) ([]byte, error) {
 		desiredVerbosity := loglevel.LogLevelToVerbosity(spec.LogLevel)
 		replacer := strings.NewReplacer(placeholder, strconv.Itoa(desiredVerbosity))
+		newDeployment := replacer.Replace(string(deployment))
+		return []byte(newDeployment), nil
+	}
+}
+
+func replaceEnvironmentHook(placeholder string, keys ...string) deploymentcontroller.ManifestHookFunc {
+	return func(_ *operatorv1.OperatorSpec, deployment []byte) ([]byte, error) {
+		env := []corev1.EnvVar{}
+		for _, k := range keys {
+			if value, ok := os.LookupEnv(k); ok {
+				env = append(env, corev1.EnvVar{Name: k, Value: value})
+			}
+		}
+		str := "{}"
+		if len(env) > 0 {
+			data, err := json.Marshal(env)
+			if err == nil {
+				str = string(data)
+			}
+		}
+		replacer := strings.NewReplacer(placeholder, "env: "+str)
 		newDeployment := replacer.Replace(string(deployment))
 		return []byte(newDeployment), nil
 	}
