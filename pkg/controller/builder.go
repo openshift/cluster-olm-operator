@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/openshift/client-go/config/informers/externalversions/config"
 	"io/fs"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -47,6 +50,10 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 		relatedObjects            []configv1.ObjectReference
 		errs                      []error
 	)
+
+	proxyInformer := config.New(b.Clients.ConfigInformerFactory, "", func(options *metav1.ListOptions) {
+		options.FieldSelector = "metadata.name=cluster"
+	}).V1().Proxies()
 
 	titler := cases.Title(language.English)
 	for _, subDirectory := range subDirectories {
@@ -102,12 +109,43 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 					b.Clients.OperatorClient,
 					b.Clients.KubeClient,
 					b.Clients.KubeInformerFactory.Apps().V1().Deployments(),
-					nil,
+					[]factory.Informer{proxyInformer.Informer()},
 					[]deploymentcontroller.ManifestHookFunc{
 						replaceVerbosityHook("${LOG_VERBOSITY}"),
 						replaceImageHook("${CATALOGD_IMAGE}", "CATALOGD_IMAGE"),
 						replaceImageHook("${OPERATOR_CONTROLLER_IMAGE}", "OPERATOR_CONTROLLER_IMAGE"),
 						replaceImageHook("${KUBE_RBAC_PROXY_IMAGE}", "KUBE_RBAC_PROXY_IMAGE"),
+					},
+					func(spec *operatorv1.OperatorSpec, deployment *appsv1.Deployment) error {
+						proxyConfig, err := proxyInformer.Lister().Get("cluster")
+						if err != nil {
+							return fmt.Errorf("error getting proxies.config.openshift.io/cluster: %w", err)
+						}
+
+						setProxyEnvs := func(container *corev1.Container) {
+							container.Env = append(container.Env,
+								corev1.EnvVar{
+									Name:  "HTTP_PROXY",
+									Value: proxyConfig.Status.HTTPProxy,
+								},
+								corev1.EnvVar{
+									Name:  "HTTPS_PROXY",
+									Value: proxyConfig.Status.HTTPSProxy,
+								},
+								corev1.EnvVar{
+									Name:  "NO_PROXY",
+									Value: proxyConfig.Status.NoProxy,
+								},
+							)
+						}
+
+						for i := range deployment.Spec.Template.Spec.InitContainers {
+							setProxyEnvs(&deployment.Spec.Template.Spec.InitContainers[i])
+						}
+						for i := range deployment.Spec.Template.Spec.Containers {
+							setProxyEnvs(&deployment.Spec.Template.Spec.Containers[i])
+						}
+						return nil
 					},
 				)
 				return nil
