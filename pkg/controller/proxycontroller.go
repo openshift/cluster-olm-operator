@@ -87,7 +87,7 @@ func UpdateProxyEnvironment(logger logr.Logger, pc *clients.ProxyClient) (bool, 
 		return false, fmt.Errorf("failed to convert object to unstructured: %+v: %w", objSpec, err)
 	}
 	logger.Info("converting unstructured to proxy")
-	var proxySpec &configv1.Proxy{}
+	proxySpec := &configv1.Proxy{}
 	err = runtime.DefaultUnstructuredConverter.FromUnstructured(uns, proxySpec)
 	if err != nil {
 		return false, fmt.Errorf("failed to convert unstructured to proxy: %+v: %w", uns, err)
