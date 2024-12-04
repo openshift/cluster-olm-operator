@@ -2,7 +2,6 @@ package controller
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -19,6 +18,9 @@ import (
 	"github.com/openshift/library-go/pkg/operator/staticresourcecontroller"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
+	yamlv3 "gopkg.in/yaml.v3"
+
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -106,7 +108,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 					b.Clients.KubeInformerFactory.Apps().V1().Deployments(),
 					nil,
 					[]deploymentcontroller.ManifestHookFunc{
-						replaceEnvironmentHook("env: {}", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"),
+						appendEnvironmentHook("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"),
 						replaceVerbosityHook("${LOG_VERBOSITY}"),
 						replaceImageHook("${CATALOGD_IMAGE}", "CATALOGD_IMAGE"),
 						replaceImageHook("${OPERATOR_CONTROLLER_IMAGE}", "OPERATOR_CONTROLLER_IMAGE"),
@@ -181,7 +183,7 @@ func replaceVerbosityHook(placeholder string) deploymentcontroller.ManifestHookF
 	}
 }
 
-func replaceEnvironmentHook(placeholder string, keys ...string) deploymentcontroller.ManifestHookFunc {
+func appendEnvironmentHook(keys ...string) deploymentcontroller.ManifestHookFunc {
 	return func(_ *operatorv1.OperatorSpec, deployment []byte) ([]byte, error) {
 		env := []corev1.EnvVar{}
 		for _, k := range keys {
@@ -189,16 +191,15 @@ func replaceEnvironmentHook(placeholder string, keys ...string) deploymentcontro
 				env = append(env, corev1.EnvVar{Name: k, Value: value})
 			}
 		}
-		str := "{}"
-		if len(env) > 0 {
-			data, err := json.Marshal(env)
-			if err == nil {
-				str = string(data)
-			}
+		dep := &appsv1.Deployment{}
+		err := yamlv3.Unmarshal(deployment, dep)
+		if err != nil {
+			return nil, err
 		}
-		replacer := strings.NewReplacer(placeholder, "env: "+str)
-		newDeployment := replacer.Replace(string(deployment))
-		return []byte(newDeployment), nil
+		for i := range dep.Spec.Template.Spec.Containers {
+			dep.Spec.Template.Spec.Containers[i].Env = append(dep.Spec.Template.Spec.Containers[i].Env, env...)
+		}
+		return yamlv3.Marshal(dep)
 	}
 }
 

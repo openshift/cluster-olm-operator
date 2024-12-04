@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"os"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -70,23 +69,5 @@ func TestControllerNameForObject(t *testing.T) {
 				t.Skipf("TODO: controller name %q is too long", actual)
 			}
 		})
-	}
-}
-
-func TestReplaceEnvironmentHook(t *testing.T) {
-	expected := `env: [{"name":"NOT_HTTP_PROXY","value":"proxy1"},{"name":"NOT_HTTPS_PROXY","value":"proxy2"}]`
-	fakeDeployment := "env: {}"
-	data := []byte(fakeDeployment)
-	os.Setenv("NOT_HTTP_PROXY", "proxy1")
-	os.Setenv("NOT_HTTPS_PROXY", "proxy2")
-	replacer := replaceEnvironmentHook(fakeDeployment, "NOT_HTTP_PROXY", "NOT_HTTPS_PROXY")
-	newData, err := replacer(nil, data)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	} else {
-		str := string(newData)
-		if str != expected {
-			t.Errorf("output=%s does not equal expected=%s", str, expected)
-		}
 	}
 }

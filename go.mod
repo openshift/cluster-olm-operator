@@ -20,6 +20,7 @@ require (
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/net v0.30.0
 	golang.org/x/text v0.19.0
+	gopkg.in/yaml.v3 v3.0.1
 	helm.sh/helm/v3 v3.16.2
 	k8s.io/api v0.31.2
 	k8s.io/apiextensions-apiserver v0.31.2
@@ -127,7 +128,6 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apiserver v0.31.2 // indirect
 	k8s.io/kms v0.31.2 // indirect
 	k8s.io/kube-aggregator v0.31.1 // indirect
