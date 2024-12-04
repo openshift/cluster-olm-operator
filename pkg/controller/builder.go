@@ -18,7 +18,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/staticresourcecontroller"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
-	yamlv3 "gopkg.in/yaml.v3"
+	sigyaml "sigs.k8s.io/yaml"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -192,14 +192,14 @@ func appendEnvironmentHook(keys ...string) deploymentcontroller.ManifestHookFunc
 			}
 		}
 		dep := &appsv1.Deployment{}
-		err := yamlv3.Unmarshal(deployment, dep)
+		err := sigyaml.Unmarshal(deployment, dep)
 		if err != nil {
 			return nil, err
 		}
 		for i := range dep.Spec.Template.Spec.Containers {
 			dep.Spec.Template.Spec.Containers[i].Env = append(dep.Spec.Template.Spec.Containers[i].Env, env...)
 		}
-		return yamlv3.Marshal(dep)
+		return sigyaml.Marshal(dep)
 	}
 }
 
