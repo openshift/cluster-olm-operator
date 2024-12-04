@@ -159,7 +159,6 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	proxyController := controller.NewProxyController(
 		"OLMProxyController",
 		cl.ProxyClient,
-		cl.KubeClient,
 		cl.OperatorClient,
 		cc.EventRecorder.ForComponent("OLMProxyController"),
 	)

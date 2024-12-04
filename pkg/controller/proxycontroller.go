@@ -9,28 +9,23 @@ import (
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/events"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
 	"github.com/openshift/cluster-olm-operator/pkg/clients"
 )
 
-func NewProxyController(name string, proxyClient *clients.ProxyClient, kubeClient kubernetes.Interface, operatorClient *clients.OperatorClient, eventRecorder events.Recorder) factory.Controller {
+func NewProxyController(name string, proxyClient *clients.ProxyClient, operatorClient *clients.OperatorClient, eventRecorder events.Recorder) factory.Controller {
 	c := proxyController{
-		name:           name,
-		kubeClient:     kubeClient,
-		operatorClient: operatorClient,
-		proxyClient:    proxyClient,
+		name:        name,
+		proxyClient: proxyClient,
 	}
 
 	return factory.New().WithSync(c.sync).WithSyncDegradedOnError(operatorClient).WithInformers(operatorClient.Informer(), proxyClient.Informer()).ToController(name, eventRecorder)
 }
 
 type proxyController struct {
-	name           string
-	kubeClient     kubernetes.Interface
-	operatorClient *clients.OperatorClient
-	proxyClient    *clients.ProxyClient
+	name        string
+	proxyClient *clients.ProxyClient
 }
 
 func (c *proxyController) sync(ctx context.Context, _ factory.SyncContext) error {
