@@ -20,7 +20,6 @@ require (
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/net v0.30.0
 	golang.org/x/text v0.19.0
-	gopkg.in/yaml.v3 v3.0.1
 	helm.sh/helm/v3 v3.16.2
 	k8s.io/api v0.31.2
 	k8s.io/apiextensions-apiserver v0.31.2
@@ -30,6 +29,7 @@ require (
 	k8s.io/klog/v2 v2.130.1
 	k8s.io/utils v0.0.0-20240921022957-49e7df575cb6
 	sigs.k8s.io/controller-runtime v0.19.0
+	sigs.k8s.io/yaml v1.4.0
 )
 
 require (
@@ -128,6 +128,7 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apiserver v0.31.2 // indirect
 	k8s.io/kms v0.31.2 // indirect
 	k8s.io/kube-aggregator v0.31.1 // indirect
@@ -136,5 +137,4 @@ require (
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kube-storage-version-migrator v0.0.6-0.20230721195810-5c8923c5ff96 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
-	sigs.k8s.io/yaml v1.4.0 // indirect
 )
