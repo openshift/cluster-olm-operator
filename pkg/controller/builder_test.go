@@ -1,8 +1,6 @@
 package controller
 
 import (
-	"os"
-	"strings"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -71,55 +69,5 @@ func TestControllerNameForObject(t *testing.T) {
 				t.Skipf("TODO: controller name %q is too long", actual)
 			}
 		})
-	}
-}
-
-func TestReplaceEnvironmentHook(t *testing.T) {
-	fakeDeployment := `apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: cluster-olm-operaroe
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      name: cluster-olm-operator
-  template:
-    metadata:
-      labels:
-        name: cluster-olm-operator
-    spec:
-      containers:
-      - name: test
-        image: test:latest
-        ports:
-        - containerPort: 80
-        env:
-        - name: OPERATOR_NAME
-          value: cluster-olm-operator
-        resources:
-          requests:
-            cpu: 10m
-            memory: 20Mi`
-	data := []byte(fakeDeployment)
-	os.Setenv("NOT_HTTP_PROXY", "proxy1")
-	os.Setenv("NOT_HTTPS_PROXY", "proxy2")
-	replacer := appendEnvironmentHook("NOT_HTTP_PROXY", "NOT_HTTPS_PROXY")
-	newData, err := replacer(nil, data)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	} else {
-		str := string(newData)
-		expected := []string{
-			"name: NOT_HTTP_PROXY",
-			"value: proxy1",
-			"name: NOT_HTTPS_PROXY",
-			"value: proxy2",
-		}
-		for _, e := range expected {
-			if !strings.Contains(str, e) {
-				t.Errorf("output=%s does not contain expected=%s", str, e)
-			}
-		}
 	}
 }

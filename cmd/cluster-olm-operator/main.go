@@ -151,7 +151,10 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	)
 
 	// Side Effect! Update our environment immediately
-	_, _ = controller.UpdateProxyEnvironment(klog.FromContext(ctx).WithName("main"), cl.ProxyClient)
+	err = controller.UpdateProxyEnvironment(klog.FromContext(ctx).WithName("main"), cl.ProxyClient)
+	if err != nil {
+		return err
+	}
 
 	proxyController := controller.NewProxyController(
 		"OLMProxyController",

@@ -16,6 +16,8 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	configinformer "github.com/openshift/client-go/config/informers/externalversions"
+	"github.com/openshift/client-go/config/informers/externalversions/config"
+	configinformerv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	operatorv1apply "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 	operatorclient "github.com/openshift/client-go/operator/clientset/versioned"
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
@@ -105,6 +107,8 @@ func New(cc *controllercmd.ControllerContext) (*Clients, error) {
 		return nil, err
 	}
 
+	configInformerFactory := configinformer.NewSharedInformerFactory(configClient, defaultResyncPeriod)
+
 	return &Clients{
 		KubeClient:             kubeClient,
 		APIExtensionsClient:    apiExtensionsClient,
@@ -114,10 +118,10 @@ func New(cc *controllercmd.ControllerContext) (*Clients, error) {
 		OperatorInformers:      operatorInformersFactory,
 		ClusterExtensionClient: NewClusterExtensionClient(dynClient),
 		ClusterCatalogClient:   NewClusterCatalogClient(dynClient),
-		ProxyClient:            NewProxyClient(dynClient),
+		ProxyClient:            NewProxyClient(configInformerFactory),
 		ConfigClient:           configClient,
 		KubeInformerFactory:    informers.NewSharedInformerFactory(kubeClient, defaultResyncPeriod),
-		ConfigInformerFactory:  configinformer.NewSharedInformerFactory(configClient, defaultResyncPeriod),
+		ConfigInformerFactory:  configInformerFactory,
 	}, nil
 }
 
@@ -196,22 +200,22 @@ func NewClusterCatalogClient(dynClient dynamic.Interface) *ClusterCatalogClient 
 }
 
 type ProxyClient struct {
-	factory  dynamicinformer.DynamicSharedInformerFactory
-	informer informers.GenericInformer
+	factory  configinformer.SharedInformerFactory
+	informer configinformerv1.ProxyInformer
 }
 
 func (pc *ProxyClient) Informer() cache.SharedIndexInformer {
 	return pc.informer.Informer()
 }
 
-func (pc *ProxyClient) Get(key types.NamespacedName) (runtime.Object, error) {
-	return pc.informer.Lister().Get(key.Name)
+func (pc *ProxyClient) Get(key string) (*configv1.Proxy, error) {
+	return pc.informer.Lister().Get(key)
 }
 
-func NewProxyClient(dynClient dynamic.Interface) *ProxyClient {
-	infFact := dynamicinformer.NewDynamicSharedInformerFactory(dynClient, defaultResyncPeriod)
-	proxyGVR := configv1.GroupVersion.WithResource("proxies")
-	inf := infFact.ForResource(proxyGVR)
+func NewProxyClient(infFact configinformer.SharedInformerFactory) *ProxyClient {
+	inf := config.New(infFact, "", func(options *metav1.ListOptions) {
+		options.FieldSelector = "metadata.name=cluster"
+	}).V1().Proxies()
 
 	return &ProxyClient{
 		factory:  infFact,
