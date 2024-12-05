@@ -20,7 +20,7 @@ func NewProxyController(name string, proxyClient *clients.ProxyClient, operatorC
 		proxyClient: proxyClient,
 	}
 
-	return factory.New().WithSync(c.sync).WithSyncDegradedOnError(operatorClient).WithInformers(operatorClient.Informer(), proxyClient.Informer()).ToController(name, eventRecorder)
+	return factory.New().WithSync(c.sync).WithSyncDegradedOnError(operatorClient).WithInformers(proxyClient.Informer()).ToController(name, eventRecorder)
 }
 
 type proxyController struct {
