@@ -30,8 +30,8 @@ type proxyController struct {
 
 func (c *proxyController) sync(ctx context.Context, _ factory.SyncContext) error {
 	logger := klog.FromContext(ctx).WithName(c.name)
-	logger.V(4).Info("sync started")
-	defer logger.V(4).Info("sync finished")
+	logger.Info("sync started")
+	defer logger.Info("sync finished")
 
 	return UpdateProxyEnvironment(logger, c.proxyClient)
 }

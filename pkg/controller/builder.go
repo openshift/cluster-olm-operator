@@ -193,6 +193,9 @@ func replaceImageHook(placeholder string, desiredImageEnvVar string) deploymentc
 }
 
 func appendEnvIfNotPresent(env []corev1.EnvVar, name, value string) []corev1.EnvVar {
+	if value == "" {
+		return env
+	}
 	for _, e := range env {
 		if e.Name == name {
 			return env
