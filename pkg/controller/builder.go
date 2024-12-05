@@ -192,6 +192,15 @@ func replaceImageHook(placeholder string, desiredImageEnvVar string) deploymentc
 	}
 }
 
+func appendEnvIfNotPresent(env []corev1.EnvVar, name, value string) []corev1.EnvVar {
+	for _, e := range env {
+		if e.Name == name {
+			return env
+		}
+	}
+	return append(env, corev1.EnvVar{Name: name, Value: value})
+}
+
 func updateDeploymentProxyHook(pc *clients.ProxyClient) deploymentcontroller.DeploymentHookFunc {
 	return func(spec *operatorv1.OperatorSpec, deployment *appsv1.Deployment) error {
 		proxyConfig, err := pc.Get("cluster")
@@ -200,20 +209,9 @@ func updateDeploymentProxyHook(pc *clients.ProxyClient) deploymentcontroller.Dep
 		}
 
 		setProxyEnvs := func(container *corev1.Container) {
-			container.Env = append(container.Env,
-				corev1.EnvVar{
-					Name:  "HTTP_PROXY",
-					Value: proxyConfig.Status.HTTPProxy,
-				},
-				corev1.EnvVar{
-					Name:  "HTTPS_PROXY",
-					Value: proxyConfig.Status.HTTPSProxy,
-				},
-				corev1.EnvVar{
-					Name:  "NO_PROXY",
-					Value: proxyConfig.Status.NoProxy,
-				},
-			)
+			container.Env = appendEnvIfNotPresent(container.Env, "HTTP_PROXY", proxyConfig.Status.HTTPProxy)
+			container.Env = appendEnvIfNotPresent(container.Env, "HTTPS_PROXY", proxyConfig.Status.HTTPSProxy)
+			container.Env = appendEnvIfNotPresent(container.Env, "NO_PROXY", proxyConfig.Status.NoProxy)
 		}
 
 		for i := range deployment.Spec.Template.Spec.InitContainers {
