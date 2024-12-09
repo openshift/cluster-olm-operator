@@ -18,6 +18,9 @@ import (
 	"github.com/openshift/library-go/pkg/operator/staticresourcecontroller"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -102,13 +105,16 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 					b.Clients.OperatorClient,
 					b.Clients.KubeClient,
 					b.Clients.KubeInformerFactory.Apps().V1().Deployments(),
-					nil,
+					[]factory.Informer{
+						b.Clients.ProxyClient.Informer(),
+					},
 					[]deploymentcontroller.ManifestHookFunc{
 						replaceVerbosityHook("${LOG_VERBOSITY}"),
 						replaceImageHook("${CATALOGD_IMAGE}", "CATALOGD_IMAGE"),
 						replaceImageHook("${OPERATOR_CONTROLLER_IMAGE}", "OPERATOR_CONTROLLER_IMAGE"),
 						replaceImageHook("${KUBE_RBAC_PROXY_IMAGE}", "KUBE_RBAC_PROXY_IMAGE"),
 					},
+					updateDeploymentProxyHook(b.Clients.ProxyClient),
 				)
 				return nil
 			}
@@ -183,5 +189,40 @@ func replaceImageHook(placeholder string, desiredImageEnvVar string) deploymentc
 		replacer := strings.NewReplacer(placeholder, os.Getenv(desiredImageEnvVar))
 		newDeployment := replacer.Replace(string(deployment))
 		return []byte(newDeployment), nil
+	}
+}
+
+func appendEnvIfNotPresent(env []corev1.EnvVar, name, value string) []corev1.EnvVar {
+	if value == "" {
+		return env
+	}
+	for _, e := range env {
+		if e.Name == name {
+			return env
+		}
+	}
+	return append(env, corev1.EnvVar{Name: name, Value: value})
+}
+
+func updateDeploymentProxyHook(pc *clients.ProxyClient) deploymentcontroller.DeploymentHookFunc {
+	return func(spec *operatorv1.OperatorSpec, deployment *appsv1.Deployment) error {
+		proxyConfig, err := pc.Get("cluster")
+		if err != nil {
+			return fmt.Errorf("error getting proxies.config.openshift.io/cluster: %w", err)
+		}
+
+		setProxyEnvs := func(container *corev1.Container) {
+			container.Env = appendEnvIfNotPresent(container.Env, "HTTP_PROXY", proxyConfig.Status.HTTPProxy)
+			container.Env = appendEnvIfNotPresent(container.Env, "HTTPS_PROXY", proxyConfig.Status.HTTPSProxy)
+			container.Env = appendEnvIfNotPresent(container.Env, "NO_PROXY", proxyConfig.Status.NoProxy)
+		}
+
+		for i := range deployment.Spec.Template.Spec.InitContainers {
+			setProxyEnvs(&deployment.Spec.Template.Spec.InitContainers[i])
+		}
+		for i := range deployment.Spec.Template.Spec.Containers {
+			setProxyEnvs(&deployment.Spec.Template.Spec.Containers[i])
+		}
+		return nil
 	}
 }
