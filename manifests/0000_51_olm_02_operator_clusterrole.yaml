@@ -12,6 +12,7 @@ rules:
       - config.openshift.io
     resources:
       - infrastructures
+      - proxies
     verbs:
       - get
       - list

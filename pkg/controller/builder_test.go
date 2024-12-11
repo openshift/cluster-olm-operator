@@ -3,6 +3,7 @@ package controller
 import (
 	"testing"
 
+	configv1 "github.com/openshift/api/config/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -70,4 +71,72 @@ func TestControllerNameForObject(t *testing.T) {
 			}
 		})
 	}
+}
+
+type MockProxyClient struct {
+	configv1.Proxy
+}
+
+func (m *MockProxyClient) Get(_ string) (*configv1.Proxy, error) {
+	return &m.Proxy, nil
+}
+
+func TestUpdateEnv(t *testing.T) {
+	mpc := MockProxyClient{
+		Proxy: configv1.Proxy{
+			Status: configv1.ProxyStatus{
+				HTTPProxy:  HTTPProxy,
+				HTTPSProxy: HTTPSProxy,
+				NoProxy:    NoProxy,
+			},
+		},
+	}
+
+	dep := appsv1.Deployment{
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	update := UpdateDeploymentProxyHook(&mpc)
+	err := update(nil, &dep)
+	if err != nil {
+		t.Fatalf("unexpected error in first update: %v", err)
+	}
+	if len(dep.Spec.Template.Spec.Containers[0].Env) != 3 {
+		t.Fatalf("environment length not 3: %+v", dep)
+	}
+
+	check := func() {
+		found := make(map[string]string, 3)
+		for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
+			found[e.Name] = e.Value
+		}
+		envs := []string{HTTPProxy, HTTPSProxy, NoProxy}
+		for _, e := range envs {
+			v, ok := found[e]
+			if !ok {
+				t.Fatalf("%q variable not found: %+v", e, dep)
+			}
+			if e != v {
+				t.Fatalf("expected value %q to be %q", v, e)
+			}
+		}
+	}
+	check()
+
+	err = update(nil, &dep)
+	if err == nil {
+		t.Fatal("no error in second update")
+	}
+	// Make sure the Deployment is unchanged
+	check()
 }

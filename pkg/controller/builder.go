@@ -2,6 +2,7 @@ package controller
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -18,6 +19,9 @@ import (
 	"github.com/openshift/library-go/pkg/operator/staticresourcecontroller"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -25,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/klog/v2"
 
 	"github.com/openshift/cluster-olm-operator/pkg/clients"
 	"github.com/openshift/library-go/pkg/operator/loglevel"
@@ -102,13 +107,16 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 					b.Clients.OperatorClient,
 					b.Clients.KubeClient,
 					b.Clients.KubeInformerFactory.Apps().V1().Deployments(),
-					nil,
+					[]factory.Informer{
+						b.Clients.ProxyClient.Informer(),
+					},
 					[]deploymentcontroller.ManifestHookFunc{
 						replaceVerbosityHook("${LOG_VERBOSITY}"),
 						replaceImageHook("${CATALOGD_IMAGE}", "CATALOGD_IMAGE"),
 						replaceImageHook("${OPERATOR_CONTROLLER_IMAGE}", "OPERATOR_CONTROLLER_IMAGE"),
 						replaceImageHook("${KUBE_RBAC_PROXY_IMAGE}", "KUBE_RBAC_PROXY_IMAGE"),
 					},
+					UpdateDeploymentProxyHook(b.Clients.ProxyClient),
 				)
 				return nil
 			}
@@ -183,5 +191,58 @@ func replaceImageHook(placeholder string, desiredImageEnvVar string) deploymentc
 		replacer := strings.NewReplacer(placeholder, os.Getenv(desiredImageEnvVar))
 		newDeployment := replacer.Replace(string(deployment))
 		return []byte(newDeployment), nil
+	}
+}
+
+func updateEnv(con *corev1.Container, name, value string) ([]corev1.EnvVar, error) {
+	for _, e := range con.Env {
+		if e.Name == name {
+			return con.Env, fmt.Errorf("unexpected environment variable %q=%q in container %q while building manifests", e.Name, e.Value, con.Name)
+		}
+	}
+	if value == "" {
+		return con.Env, nil
+	}
+	klog.FromContext(context.Background()).WithName("builder").V(1).Info("Updated environment", "container", con.Name, "key", name, "value", value)
+	return append(con.Env, corev1.EnvVar{Name: name, Value: value}), nil
+}
+
+func setProxyEnvs(con *corev1.Container, vars map[string]string) error {
+	var err error
+	for name, value := range vars {
+		con.Env, err = updateEnv(con, name, value)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func UpdateDeploymentProxyHook(pc clients.ProxyClientInterface) deploymentcontroller.DeploymentHookFunc {
+	return func(_ *operatorv1.OperatorSpec, deployment *appsv1.Deployment) error {
+		proxyConfig, err := pc.Get("cluster")
+		if err != nil {
+			return fmt.Errorf("error getting proxies.config.openshift.io/cluster: %w", err)
+		}
+
+		vars := map[string]string{
+			HTTPProxy:  proxyConfig.Status.HTTPProxy,
+			HTTPSProxy: proxyConfig.Status.HTTPSProxy,
+			NoProxy:    proxyConfig.Status.NoProxy,
+		}
+
+		for i := range deployment.Spec.Template.Spec.InitContainers {
+			err = setProxyEnvs(&deployment.Spec.Template.Spec.InitContainers[i], vars)
+			if err != nil {
+				return err
+			}
+		}
+		for i := range deployment.Spec.Template.Spec.Containers {
+			err = setProxyEnvs(&deployment.Spec.Template.Spec.Containers[i], vars)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 }
