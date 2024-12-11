@@ -48,4 +48,5 @@ linters-settings:
     local-prefixes: github.com/operator-framework/catalogd
 
 output:
-  format: tab
+  formats:
+    - format: tab

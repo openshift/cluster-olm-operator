@@ -48,7 +48,7 @@ func newRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cluster-olm-operator",
 		Short: "OpenShift Cluster OLM Operator",
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(cmd *cobra.Command, _ []string) {
 			if versionFlag {
 				fmt.Println(version.Get())
 				os.Exit(0)
