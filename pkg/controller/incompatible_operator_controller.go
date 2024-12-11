@@ -130,7 +130,7 @@ func (c *incompatibleOperatorController) getIncompatibleOperators() ([]string, e
 		if err != nil {
 			errMessage := fmt.Sprintf("error returning the last deployed release for %s", name)
 			logger.Info(errMessage)
-			errs = append(errs, fmt.Errorf(errMessage))
+			errs = append(errs, errors.New(errMessage))
 			continue
 		}
 
@@ -145,9 +145,9 @@ func (c *incompatibleOperatorController) getIncompatibleOperators() ([]string, e
 		logger = logger.WithValues("bundleName", rel.Labels[bundleNameKey])
 		props, err := propertyListFromPropertiesAnnotation(rel.Chart.Metadata.Annotations["olm.properties"])
 		if err != nil {
-			errMessage := fmt.Sprintf("could not convert olm.properties: %s", err.Error())
-			logger.Info(errMessage)
-			errs = append(errs, fmt.Errorf(fmt.Sprintf("error with cluster extension %s: error in bundle %s: ", name, rel.Labels[bundleNameKey])+errMessage))
+			err = fmt.Errorf("could not convert olm.properties: %v", err)
+			logger.Info(err.Error())
+			errs = append(errs, fmt.Errorf("error with cluster extension %s: error in bundle %s: %v", name, rel.Labels[bundleNameKey], err))
 			continue
 		}
 		numMaxOCPProps := 0
@@ -156,15 +156,15 @@ func (c *incompatibleOperatorController) getIncompatibleOperators() ([]string, e
 				numMaxOCPProps++
 				maxOCPVersion, err := utils.ToAllowedSemver(p.Value)
 				if err != nil {
-					errMessage := fmt.Sprintf("error converting to semver for version %s: %v", string(p.Value), err)
-					logger.Info(errMessage)
-					errs = append(errs, fmt.Errorf(fmt.Sprintf("error with cluster extension %s: error in bundle %s: ", name, rel.Labels[bundleNameKey])+errMessage))
+					err = fmt.Errorf("error converting to semver for version %s: %v", string(p.Value), err)
+					logger.Info(err.Error())
+					errs = append(errs, fmt.Errorf("error with cluster extension %s: error in bundle %s: %v", name, rel.Labels[bundleNameKey], err))
 					continue
 				}
 				if numMaxOCPProps > 1 {
-					errMessage := fmt.Sprintf("more than one %s found in bundle", maxOpenShiftVersionProperty)
-					logger.Info(errMessage)
-					errs = append(errs, fmt.Errorf(fmt.Sprintf("error with cluster extension %s: error in bundle %s: ", name, rel.Labels[bundleNameKey])+errMessage))
+					err = fmt.Errorf("more than one %s found in bundle", maxOpenShiftVersionProperty)
+					logger.Info(err.Error())
+					errs = append(errs, fmt.Errorf("error with cluster extension %s: error in bundle %s: %v", name, rel.Labels[bundleNameKey], err))
 					continue
 				}
 				if maxOCPVersion != nil && !maxOCPVersion.GTE(*c.nextOCPMinorVersion) {
