@@ -179,7 +179,7 @@ func replaceVerbosityHook(placeholder string) deploymentcontroller.ManifestHookF
 }
 
 func replaceImageHook(placeholder string, desiredImageEnvVar string) deploymentcontroller.ManifestHookFunc {
-	return func(spec *operatorv1.OperatorSpec, deployment []byte) ([]byte, error) {
+	return func(_ *operatorv1.OperatorSpec, deployment []byte) ([]byte, error) {
 		replacer := strings.NewReplacer(placeholder, os.Getenv(desiredImageEnvVar))
 		newDeployment := replacer.Replace(string(deployment))
 		return []byte(newDeployment), nil
