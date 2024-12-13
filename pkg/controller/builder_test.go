@@ -3,6 +3,7 @@ package controller
 import (
 	"testing"
 
+	configv1 "github.com/openshift/api/config/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -70,4 +71,69 @@ func TestControllerNameForObject(t *testing.T) {
 			}
 		})
 	}
+}
+
+type MockProxyClient struct {
+	configv1.Proxy
+}
+
+func (m *MockProxyClient) Get(_ string) (*configv1.Proxy, error) {
+	return &m.Proxy, nil
+}
+
+func TestUpdateEnv(t *testing.T) {
+	mpc := MockProxyClient{
+		Proxy: configv1.Proxy{
+			Status: configv1.ProxyStatus{
+				HTTPProxy:  HTTPProxy,
+				HTTPSProxy: HTTPSProxy,
+				NoProxy:    NoProxy,
+			},
+		},
+	}
+
+	dep := appsv1.Deployment{
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	update := UpdateDeploymentProxyHook(&mpc)
+	err := update(nil, &dep)
+	if err != nil {
+		t.Fatalf("unexpected error in first update: %v", err)
+	}
+	if len(dep.Spec.Template.Spec.Containers[0].Env) != 3 {
+		t.Fatalf("environment length not 3: %+v", dep)
+	}
+
+	check := func() {
+		// We want to make sure the order is preserved, so check explicitly
+		vars := []corev1.EnvVar{
+			{Name: HTTPSProxy, Value: HTTPSProxy},
+			{Name: HTTPProxy, Value: HTTPProxy},
+			{Name: NoProxy, Value: NoProxy},
+		}
+		for i := range vars {
+			if vars[i] != dep.Spec.Template.Spec.Containers[0].Env[i] {
+				t.Fatalf("iter %d: expected: %+v, got: %+v", i, vars[i], dep.Spec.Template.Spec.Containers[0].Env[i])
+			}
+		}
+	}
+	check()
+
+	err = update(nil, &dep)
+	if err == nil {
+		t.Fatal("no error in second update")
+	}
+	// Make sure the Deployment is unchanged
+	check()
 }
