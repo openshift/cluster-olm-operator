@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/component-base/cli"
 	utilflag "k8s.io/component-base/cli/flag"
+	"k8s.io/klog/v2"
 
 	"github.com/openshift/cluster-olm-operator/internal/utils"
 	"github.com/openshift/cluster-olm-operator/pkg/clients"
@@ -31,6 +32,10 @@ import (
 	"github.com/openshift/cluster-olm-operator/pkg/version"
 
 	catalogdv1 "github.com/operator-framework/catalogd/api/v1"
+)
+
+const (
+	olmProxyController = "OLMProxyController"
 )
 
 func main() {
@@ -149,6 +154,19 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		cc.EventRecorder.ForComponent("OLMIncompatibleOperatorController"),
 	)
 
+	// Side Effect! Update our environment immediately
+	err = controller.UpdateProxyEnvironment(klog.FromContext(ctx).WithName("main"), cl.ProxyClient)
+	if err != nil {
+		return err
+	}
+
+	proxyController := controller.NewProxyController(
+		olmProxyController,
+		cl.ProxyClient,
+		cl.OperatorClient,
+		cc.EventRecorder.ForComponent(olmProxyController),
+	)
+
 	versionGetter := status.NewVersionGetter()
 	versionGetter.SetVersion("operator", status.VersionForOperatorFromEnv())
 
@@ -174,7 +192,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 
 	cl.StartInformers(ctx)
 
-	for _, c := range append(staticResourceControllerList, upgradeableConditionController, incompatibleOperatorController, clusterOperatorController, operatorLoggingController) {
+	for _, c := range append(staticResourceControllerList, upgradeableConditionController, incompatibleOperatorController, clusterOperatorController, operatorLoggingController, proxyController) {
 		go func(c factory.Controller) {
 			defer runtime.HandleCrash()
 			c.Run(ctx, 1)
