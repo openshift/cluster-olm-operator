@@ -154,7 +154,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		cc.EventRecorder.ForComponent("OLMIncompatibleOperatorController"),
 	)
 
-	// Side Effect! Update our environment immediately
+	// Update the environment if proxy information is available
 	err = controller.UpdateProxyEnvironment(klog.FromContext(ctx).WithName("main"), cl.ProxyClient)
 	if err != nil {
 		return err

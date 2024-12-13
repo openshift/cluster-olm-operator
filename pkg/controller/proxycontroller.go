@@ -43,7 +43,7 @@ func (c *proxyController) sync(ctx context.Context, _ factory.SyncContext) error
 }
 
 func UpdateProxyEnvironment(logger logr.Logger, pc clients.ProxyClientInterface) error {
-	logger.Info("getting proxy configuration")
+	logger.Info("getting cluster-wide proxy configuration")
 	proxySpec, err := pc.Get("cluster")
 	if err != nil {
 		if apierrors.IsNotFound(err) {
