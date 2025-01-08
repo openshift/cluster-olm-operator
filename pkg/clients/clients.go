@@ -10,8 +10,11 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 
+	"github.com/davecgh/go-spew/spew"
+	"github.com/google/go-cmp/cmp"
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
@@ -335,6 +338,7 @@ func (o OperatorClient) ApplyOperatorStatus(ctx context.Context, fieldManager st
 			return err
 		}
 		desiredStatusObj, err := toStatusObj(desiredOLMStatus)
+		klog.Infof("ApplyOperatorStatus+, desiredStatusObj: %s", spew.Sdump(desiredStatusObj))
 		if err != nil {
 			return err
 		}
@@ -342,16 +346,18 @@ func (o OperatorClient) ApplyOperatorStatus(ctx context.Context, fieldManager st
 			// nothing to apply, so return early
 			return nil
 		}
+		klog.Infof("ApplyOperatorStatus+, diff: %s", cmp.Diff(previouslyDesiredStatusObj, desiredStatusObj))
 	}
 
 	desiredObj := operatorv1apply.OLM(globalConfigName).WithStatus(desiredOLMStatus)
-	_, err = o.clientset.OperatorV1().OLMs().ApplyStatus(ctx, desiredObj, metav1.ApplyOptions{
+	res, err := o.clientset.OperatorV1().OLMs().ApplyStatus(ctx, desiredObj, metav1.ApplyOptions{
 		Force:        true,
 		FieldManager: fieldManager,
 	})
 	if err != nil {
 		return fmt.Errorf("unable to ApplyStatus for operator using fieldManager %q: %w", fieldManager, err)
 	}
+	klog.Infof("ApplyOperatorStatus-, res: %s", spew.Sdump(res))
 
 	return nil
 }
