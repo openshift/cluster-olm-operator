@@ -296,7 +296,7 @@ func (o OperatorClient) ApplyOperatorStatus(ctx context.Context, fieldManager st
 		}
 	}
 
-	instance, err := o.informers.Operator().V1().OLMs().Lister().Get(globalConfigName)
+	instance, err := o.clientset.OperatorV1().OLMs().Get(ctx, globalConfigName, metav1.GetOptions{})
 	switch {
 	case apierrors.IsNotFound(err):
 		// set last transitionTimes and then apply
