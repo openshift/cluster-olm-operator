@@ -58,6 +58,7 @@ type Clients struct {
 	ClusterExtensionClient     *ClusterExtensionClient
 	ClusterCatalogClient       *ClusterCatalogClient
 	ProxyClient                *ProxyClient
+	FeatureGateClient          *FeatureGateClient
 	ConfigClient               configclient.Interface
 	KubeInformerFactory        informers.SharedInformerFactory
 	ConfigInformerFactory      configinformer.SharedInformerFactory
@@ -119,6 +120,7 @@ func New(cc *controllercmd.ControllerContext) (*Clients, error) {
 		ClusterExtensionClient: NewClusterExtensionClient(dynClient),
 		ClusterCatalogClient:   NewClusterCatalogClient(dynClient),
 		ProxyClient:            NewProxyClient(configInformerFactory),
+		FeatureGateClient:      NewFeatureGateClient(configInformerFactory),
 		ConfigClient:           configClient,
 		KubeInformerFactory:    informers.NewSharedInformerFactory(kubeClient, defaultResyncPeriod),
 		ConfigInformerFactory:  configInformerFactory,
@@ -132,6 +134,7 @@ func (c *Clients) StartInformers(ctx context.Context) {
 	c.ClusterExtensionClient.factory.Start(ctx.Done())
 	c.ClusterCatalogClient.factory.Start(ctx.Done())
 	c.ProxyClient.factory.Start(ctx.Done())
+	c.FeatureGateClient.factory.Start(ctx.Done())
 	if c.KubeInformersForNamespaces != nil {
 		c.KubeInformersForNamespaces.Start(ctx.Done())
 	}
@@ -196,6 +199,30 @@ func NewClusterCatalogClient(dynClient dynamic.Interface) *ClusterCatalogClient 
 	return &ClusterCatalogClient{
 		factory:  infFact,
 		informer: inf,
+	}
+}
+
+type FeatureGateClientInterface interface {
+	Get(key string) (*configv1.FeatureGate, error)
+}
+
+type FeatureGateClient struct {
+	factory  configinformer.SharedInformerFactory
+	informer configinformerv1.FeatureGateInformer
+}
+
+func (fgc *FeatureGateClient) Informer() cache.SharedIndexInformer {
+	return fgc.informer.Informer()
+}
+
+func (fgc *FeatureGateClient) Get(key string) (*configv1.FeatureGate, error) {
+	return fgc.informer.Lister().Get(key)
+}
+
+func NewFeatureGateClient(infFact configinformer.SharedInformerFactory) *FeatureGateClient {
+	return &FeatureGateClient{
+		factory:  infFact,
+		informer: infFact.Config().V1().FeatureGates(),
 	}
 }
 

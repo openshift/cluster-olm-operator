@@ -8,10 +8,12 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/controller/factory"
@@ -109,6 +111,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 					b.Clients.KubeInformerFactory.Apps().V1().Deployments(),
 					[]factory.Informer{
 						b.Clients.ProxyClient.Informer(),
+						b.Clients.FeatureGateClient.Informer(),
 					},
 					[]deploymentcontroller.ManifestHookFunc{
 						replaceVerbosityHook("${LOG_VERBOSITY}"),
@@ -117,6 +120,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 						replaceImageHook("${KUBE_RBAC_PROXY_IMAGE}", "KUBE_RBAC_PROXY_IMAGE"),
 					},
 					UpdateDeploymentProxyHook(b.Clients.ProxyClient),
+					UpdateDeploymentFeatureGatesHook(b.Clients.FeatureGateClient),
 				)
 				return nil
 			}
@@ -247,6 +251,34 @@ func UpdateDeploymentProxyHook(pc clients.ProxyClientInterface) deploymentcontro
 		if len(errs) > 0 {
 			return errors.Join(errs...)
 		}
+		return nil
+	}
+}
+
+func UpdateDeploymentFeatureGatesHook(fgc clients.FeatureGateClientInterface) deploymentcontroller.DeploymentHookFunc {
+	return func(_ *operatorv1.OperatorSpec, deployment *appsv1.Deployment) error {
+		klog.FromContext(context.Background()).WithName("builder").V(0).Info("Updating environment", "deployment", deployment.Name)
+		featureGate, err := fgc.Get("cluster")
+		if err != nil {
+			return fmt.Errorf("error getting featuregates.config.openshift.io/cluster: %w", err)
+		}
+
+		var newOLM bool
+		// TODO: ignores handling of different versions
+		for _, featureGateValues := range featureGate.Status.FeatureGates {
+			if slices.ContainsFunc(featureGateValues.Enabled, func(atts configv1.FeatureGateAttributes) bool {
+				return atts.Name == features.FeatureGateNewOLM
+			}) {
+				newOLM = true
+				break
+			}
+		}
+
+		klog.FromContext(context.Background()).Info("UpdateDeploymentFeatureGatesHook", "newOLM", newOLM)
+		if newOLM {
+			// TODO: set upstream feature gates
+		}
+
 		return nil
 	}
 }
