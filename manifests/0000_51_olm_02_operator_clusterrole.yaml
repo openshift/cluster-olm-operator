@@ -68,6 +68,25 @@ rules:
   - apiGroups:
       - ""
     resources:
+      - endpoints
+    verbs:
+      - get
+      - list
+      - watch
+  # necessary for OCP monitoring
+  # together with endpoints, services, pods
+  - apiGroups:
+      - monitoring.coreos.com
+    resources:
+      - servicemonitors
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
       - pods
     verbs:
       - get
@@ -170,10 +189,12 @@ rules:
     - bind
     resourceNames:
     - catalogd-manager-role
+    - catalogd-metrics-monitor-role
     - catalogd-metrics-reader
     - catalogd-proxy-role
     - catalogd-leader-election-role
     - operator-controller-manager-role
+    - operator-controller-metrics-monitor-role
     - operator-controller-metrics-reader
     - operator-controller-proxy-role
     - operator-controller-leader-election-role
