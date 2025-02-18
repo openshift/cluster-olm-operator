@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -117,6 +118,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 						replaceImageHook("${KUBE_RBAC_PROXY_IMAGE}", "KUBE_RBAC_PROXY_IMAGE"),
 					},
 					UpdateDeploymentProxyHook(b.Clients.ProxyClient),
+					UpdateDeploymentFeatureGatesHook(b.Clients.FeatureGatesAccessor, b.Clients.FeatureGateMapper),
 				)
 				return nil
 			}
@@ -219,19 +221,19 @@ func setContainerEnv(con *corev1.Container, envs []corev1.EnvVar) error {
 
 func UpdateDeploymentProxyHook(pc clients.ProxyClientInterface) deploymentcontroller.DeploymentHookFunc {
 	return func(_ *operatorv1.OperatorSpec, deployment *appsv1.Deployment) error {
-		klog.FromContext(context.Background()).WithName("builder").V(0).Info("Updating environment", "deployment", deployment.Name)
+		klog.FromContext(context.Background()).WithName("builder").V(0).Info("ProxyHook updating environment", "deployment", deployment.Name)
 		proxyConfig, err := pc.Get("cluster")
 		if err != nil {
 			return fmt.Errorf("error getting proxies.config.openshift.io/cluster: %w", err)
 		}
 
-		var errs []error
 		vars := []corev1.EnvVar{
 			{Name: HTTPSProxy, Value: proxyConfig.Status.HTTPSProxy},
 			{Name: HTTPProxy, Value: proxyConfig.Status.HTTPProxy},
 			{Name: NoProxy, Value: proxyConfig.Status.NoProxy},
 		}
 
+		var errs []error
 		for i := range deployment.Spec.Template.Spec.InitContainers {
 			err = setContainerEnv(&deployment.Spec.Template.Spec.InitContainers[i], vars)
 			if err != nil {
@@ -247,6 +249,22 @@ func UpdateDeploymentProxyHook(pc clients.ProxyClientInterface) deploymentcontro
 		if len(errs) > 0 {
 			return errors.Join(errs...)
 		}
+
 		return nil
 	}
+}
+
+func setContainerArg(con *corev1.Container, arg, value string) error {
+	if slices.ContainsFunc(con.Args, func(oldArg string) bool {
+		return strings.HasPrefix(oldArg, arg)
+	}) {
+		return fmt.Errorf("unexpected argument %q in container %q while building manifests", arg, con.Name)
+	}
+
+	if value == "" {
+		return nil
+	}
+	klog.FromContext(context.Background()).WithName("builder").V(4).Info("Updated args", "container", con.Name, "arg", arg, "value", value)
+	con.Args = append(con.Args, fmt.Sprintf("%s=%s", arg, value))
+	return nil
 }

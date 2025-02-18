@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	goflag "flag"
 	"fmt"
 	"os"
@@ -191,6 +192,16 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	operatorLoggingController := loglevel.NewClusterOperatorLoggingController(cl.OperatorClient, cc.EventRecorder.ForComponent("ClusterOLMOperatorLoggingController"))
 
 	cl.StartInformers(ctx)
+
+	log := klog.FromContext(ctx)
+	select {
+	case <-cl.FeatureGatesAccessor.InitialFeatureGatesObserved():
+		featureGates, _ := cl.FeatureGatesAccessor.CurrentFeatureGates()
+		log.Info("FeatureGates initialized", "knownFeatures", featureGates.KnownFeatures())
+	case <-time.After(1 * time.Minute):
+		log.Error(nil, "timed out waiting for FeatureGate detection")
+		return errors.New("timed out waiting for FeatureGate detection")
+	}
 
 	for _, c := range append(staticResourceControllerList, upgradeableConditionController, incompatibleOperatorController, clusterOperatorController, operatorLoggingController, proxyController) {
 		go func(c factory.Controller) {
