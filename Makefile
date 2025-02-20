@@ -2,6 +2,7 @@ SHELL := /usr/bin/env bash
 
 GO_TEST_PACKAGES :=./pkg/... ./cmd/...
 GO_BUILD_BINDIR := bin
+export GOTOOLCHAIN=$(shell grep 'toolchain' go.mod | cut -d' ' -f2 | sed 's/go//')
 
 .PHONY: all
 all: build
