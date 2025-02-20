@@ -75,6 +75,7 @@ func newStartCommand() *cobra.Command {
 		"cluster-olm-operator",
 		version.Get(),
 		runOperator,
+		nil,
 	).NewCommandWithContext(context.Background())
 	cmd.Use = "start"
 	cmd.Short = "Start the Cluster OLM Operator"
@@ -187,6 +188,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		cl.OperatorClient,
 		versionGetter,
 		cc.EventRecorder.ForComponent("olm"),
+		nil,
 	)
 
 	operatorLoggingController := loglevel.NewClusterOperatorLoggingController(cl.OperatorClient, cc.EventRecorder.ForComponent("ClusterOLMOperatorLoggingController"))
