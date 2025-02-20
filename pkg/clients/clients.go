@@ -172,6 +172,7 @@ func setupFeatureGatesAccessor(
 			Namespace:  operatorNamespace,
 			Name:       "cluster-olm-operator",
 		},
+		nil,
 	)
 
 	operatorImageVersion := status.VersionForOperatorFromEnv()

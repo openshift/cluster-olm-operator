@@ -3,6 +3,8 @@ SHELL := /usr/bin/env bash
 GO_TEST_PACKAGES :=./pkg/... ./cmd/...
 GO_BUILD_BINDIR := bin
 
+export GOTOOLCHAIN=go1.23.4
+
 .PHONY: all
 all: build
 
