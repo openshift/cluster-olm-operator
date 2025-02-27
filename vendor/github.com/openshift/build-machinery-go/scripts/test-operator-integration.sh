@@ -18,8 +18,6 @@ if ! command -v multi-operator-manager &> /dev/null; then
     exit 1
 fi
 
-REPLACE_TEST_OUTPUT="${REPLACE_TEST_OUTPUT:-false}"
-
 # Define the path to the operator binary
 MOM_CMD="${MOM_CMD:-multi-operator-manager}"
 
@@ -40,13 +38,6 @@ APPLY_CONFIG_ARGS=(
   --test-dir="$APPLY_CONFIG_INPUT_DIR"
   --output-dir="$APPLY_CONFIG_OUTPUT_DIR"
 )
-
-if [ "$REPLACE_TEST_OUTPUT" == "true" ]
-then
-  APPLY_CONFIG_ARGS=("${APPLY_CONFIG_ARGS[@]}" "--replace-expected-output=true")
-else
-  APPLY_CONFIG_ARGS=("${APPLY_CONFIG_ARGS[@]}" "--preserve-policy=KeepAlways")
-fi
 
 # Run the apply-configuration command from the operator
 "${MOM_CMD}" "${APPLY_CONFIG_ARGS[@]}"
