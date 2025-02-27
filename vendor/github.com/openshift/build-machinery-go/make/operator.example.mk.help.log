@@ -22,7 +22,6 @@ update-deps-overrides
 update-generated
 update-gofmt
 update-profile-manifests
-update-test-operator-integration
 verify
 verify-bindata
 verify-codegen

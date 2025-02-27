@@ -3,7 +3,7 @@ package resourceapply
 import (
 	"fmt"
 
-	patch "gopkg.in/evanphx/json-patch.v4"
+	patch "github.com/evanphx/json-patch"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"

@@ -172,7 +172,6 @@ func setupFeatureGatesAccessor(
 			Namespace:  operatorNamespace,
 			Name:       "cluster-olm-operator",
 		},
-		clock.RealClock{},
 	)
 
 	operatorImageVersion := status.VersionForOperatorFromEnv()
