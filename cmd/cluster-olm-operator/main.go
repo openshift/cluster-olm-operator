@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	goflag "flag"
 	"fmt"
 	"os"
@@ -25,6 +26,7 @@ import (
 	"k8s.io/component-base/cli"
 	utilflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/clock"
 
 	"github.com/openshift/cluster-olm-operator/internal/utils"
 	"github.com/openshift/cluster-olm-operator/pkg/clients"
@@ -74,6 +76,7 @@ func newStartCommand() *cobra.Command {
 		"cluster-olm-operator",
 		version.Get(),
 		runOperator,
+		clock.RealClock{},
 	).NewCommandWithContext(context.Background())
 	cmd.Use = "start"
 	cmd.Short = "Start the Cluster OLM Operator"
@@ -186,11 +189,22 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		cl.OperatorClient,
 		versionGetter,
 		cc.EventRecorder.ForComponent("olm"),
+		cc.Clock,
 	)
 
 	operatorLoggingController := loglevel.NewClusterOperatorLoggingController(cl.OperatorClient, cc.EventRecorder.ForComponent("ClusterOLMOperatorLoggingController"))
 
 	cl.StartInformers(ctx)
+
+	log := klog.FromContext(ctx)
+	select {
+	case <-cl.FeatureGatesAccessor.InitialFeatureGatesObserved():
+		featureGates, _ := cl.FeatureGatesAccessor.CurrentFeatureGates()
+		log.Info("FeatureGates initialized", "knownFeatures", featureGates.KnownFeatures())
+	case <-time.After(1 * time.Minute):
+		log.Error(nil, "timed out waiting for FeatureGate detection")
+		return errors.New("timed out waiting for FeatureGate detection")
+	}
 
 	for _, c := range append(staticResourceControllerList, upgradeableConditionController, incompatibleOperatorController, clusterOperatorController, operatorLoggingController, proxyController) {
 		go func(c factory.Controller) {

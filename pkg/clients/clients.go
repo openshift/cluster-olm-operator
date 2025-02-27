@@ -21,11 +21,16 @@ import (
 	operatorv1apply "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 	operatorclient "github.com/openshift/client-go/operator/clientset/versioned"
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
+	internalfeatures "github.com/openshift/cluster-olm-operator/internal/featuregates"
 	"github.com/openshift/library-go/pkg/apiserver/jsonpatch"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
+	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
+	"github.com/openshift/library-go/pkg/operator/status"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	ocv1 "github.com/operator-framework/operator-controller/api/v1"
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -62,6 +67,8 @@ type Clients struct {
 	KubeInformerFactory        informers.SharedInformerFactory
 	ConfigInformerFactory      configinformer.SharedInformerFactory
 	KubeInformersForNamespaces v1helpers.KubeInformersForNamespaces
+	FeatureGatesAccessor       featuregates.FeatureGateAccess
+	FeatureGateMapper          internalfeatures.MapperInterface
 }
 
 func New(cc *controllercmd.ControllerContext) (*Clients, error) {
@@ -122,10 +129,13 @@ func New(cc *controllercmd.ControllerContext) (*Clients, error) {
 		ConfigClient:           configClient,
 		KubeInformerFactory:    informers.NewSharedInformerFactory(kubeClient, defaultResyncPeriod),
 		ConfigInformerFactory:  configInformerFactory,
+		FeatureGatesAccessor:   setupFeatureGatesAccessor(kubeClient, configInformerFactory, cc.OperatorNamespace),
+		FeatureGateMapper:      internalfeatures.NewMapper(),
 	}, nil
 }
 
 func (c *Clients) StartInformers(ctx context.Context) {
+	go c.FeatureGatesAccessor.Run(ctx)
 	c.KubeInformerFactory.Start(ctx.Done())
 	c.ConfigInformerFactory.Start(ctx.Done())
 	c.OperatorInformers.Start(ctx.Done())
@@ -146,6 +156,39 @@ func (c *Clients) ClientHolder() *resourceapply.ClientHolder {
 		cl = cl.WithKubernetesInformers(c.KubeInformersForNamespaces)
 	}
 	return cl
+}
+
+func setupFeatureGatesAccessor(
+	kubeClient *kubernetes.Clientset,
+	configInformerFactory configinformer.SharedInformerFactory,
+	operatorNamespace string,
+) featuregates.FeatureGateAccess {
+	eventRecorder := events.NewKubeRecorder(
+		kubeClient.CoreV1().Events(operatorNamespace),
+		"cluster-olm-operator",
+		&corev1.ObjectReference{
+			APIVersion: "apps/v1",
+			Kind:       "Deployment",
+			Namespace:  operatorNamespace,
+			Name:       "cluster-olm-operator",
+		},
+		clock.RealClock{},
+	)
+
+	operatorImageVersion := status.VersionForOperatorFromEnv()
+	missingVersion := "0.0.1-snapshot"
+	featureGateAccessor := featuregates.NewFeatureGateAccess(
+		operatorImageVersion,
+		missingVersion,
+		configInformerFactory.Config().V1().ClusterVersions(), configInformerFactory.Config().V1().FeatureGates(),
+		eventRecorder,
+	)
+	// modify the default behavior of calling exit(0) to noop whenever a FeatureGates set changes in cluster
+	// reconsider this change if there ever comes a feature flag that affects the cluster-olm-operator directly
+	// see: https://github.com/openshift/cluster-olm-operator/pull/102#discussion_r1926861888
+	featureGateAccessor.SetChangeHandler(func(_ featuregates.FeatureChange) {})
+
+	return featureGateAccessor
 }
 
 var _ v1helpers.OperatorClientWithFinalizers = &OperatorClient{}

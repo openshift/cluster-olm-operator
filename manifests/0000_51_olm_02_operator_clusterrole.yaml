@@ -13,6 +13,8 @@ rules:
     resources:
       - infrastructures
       - proxies
+      - featuregates
+      - clusterversions
     verbs:
       - get
       - list
