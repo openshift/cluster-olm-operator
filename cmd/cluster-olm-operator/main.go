@@ -26,6 +26,7 @@ import (
 	"k8s.io/component-base/cli"
 	utilflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/clock"
 
 	"github.com/openshift/cluster-olm-operator/internal/utils"
 	"github.com/openshift/cluster-olm-operator/pkg/clients"
@@ -75,6 +76,7 @@ func newStartCommand() *cobra.Command {
 		"cluster-olm-operator",
 		version.Get(),
 		runOperator,
+		clock.RealClock{},
 	).NewCommandWithContext(context.Background())
 	cmd.Use = "start"
 	cmd.Short = "Start the Cluster OLM Operator"
@@ -187,6 +189,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		cl.OperatorClient,
 		versionGetter,
 		cc.EventRecorder.ForComponent("olm"),
+		cc.Clock,
 	)
 
 	operatorLoggingController := loglevel.NewClusterOperatorLoggingController(cl.OperatorClient, cc.EventRecorder.ForComponent("ClusterOLMOperatorLoggingController"))
