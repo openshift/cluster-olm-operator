@@ -10,9 +10,12 @@ import (
 )
 
 // Add your new upstream feature gate here
-// const (
-// 		MyUpstreamFeature = "MyUpstreamFeature"
-// )
+const (
+	// ref:
+	// 1. https://github.com/operator-framework/operator-controller/pull/1643
+	// 2. https://github.com/operator-framework/operator-controller/commit/5965d5c9ee56e9077dca39afa59047ece84ed97e#diff-bfcbe63805e38aeb1d57481bd753566c7ddf58702829e1c1ffd7698bd047de67R309
+	APIV1MetasHandler = "APIV1MetasHandler"
+)
 
 type MapperInterface interface {
 	OperatorControllerUpstreamForDownstream(downstreamGate configv1.FeatureGateName) []string
@@ -34,6 +37,7 @@ func NewMapper() *Mapper {
 	}
 	catalogdGates := map[configv1.FeatureGateName][]string{
 		// features.FeatureGateNewOLMMyDownstreamFeature: {MyUpstreamCatalogdFeature}
+		features.FeatureGateNewOLMCatalogdAPIV1Metas: {APIV1MetasHandler},
 	}
 
 	for _, m := range []map[configv1.FeatureGateName][]string{operatorControllerGates, catalogdGates} {
