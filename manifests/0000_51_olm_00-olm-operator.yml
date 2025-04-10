@@ -8,5 +8,5 @@ metadata:
     release.openshift.io/create-only: "true"
 spec:
   managementState: Managed
-  logLevel: Normal
+  logLevel: Debug
   operatorLogLevel: Normal
