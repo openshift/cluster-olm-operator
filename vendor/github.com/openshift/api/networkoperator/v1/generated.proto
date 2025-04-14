@@ -110,8 +110,6 @@ message EgressRouterSpec {
 message EgressRouterStatus {
   // Observed status of the egress router
   // +required
-  // +listType=map
-  // +listMapKey=type
   repeated EgressRouterStatusCondition conditions = 1;
 }
 
