@@ -8,3 +8,4 @@ metadata:
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/enforce-version: latest
     workload.openshift.io/allowed: "management"
+    openshift.io/node-selector: ""
