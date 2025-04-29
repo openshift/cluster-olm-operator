@@ -16,6 +16,8 @@ const (
 	// 2. https://github.com/operator-framework/operator-controller/commit/5965d5c9ee56e9077dca39afa59047ece84ed97e#diff-bfcbe63805e38aeb1d57481bd753566c7ddf58702829e1c1ffd7698bd047de67R309
 	APIV1MetasHandler    = "APIV1MetasHandler"
 	PreflightPermissions = "PreflightPermissions"
+	// SingleOwnNamespaceInstallSupport: Enables support for Single- and OwnNamespace install modes.
+	SingleOwnNamespaceInstallSupport = "SingleOwnNamespaceInstallSupport"
 )
 
 type MapperInterface interface {
@@ -36,6 +38,7 @@ func NewMapper() *Mapper {
 	operatorControllerGates := map[configv1.FeatureGateName][]string{
 		// features.FeatureGateNewOLMMyDownstreamFeature: {MyUpstreamControllerOperatorFeature}
 		features.FeatureGateNewOLMPreflightPermissionChecks: {PreflightPermissions},
+		features.FeatureGateNewOLMOwnSingleNamespace:        {SingleOwnNamespaceInstallSupport},
 	}
 	catalogdGates := map[configv1.FeatureGateName][]string{
 		// features.FeatureGateNewOLMMyDownstreamFeature: {MyUpstreamCatalogdFeature}
