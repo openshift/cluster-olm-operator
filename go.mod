@@ -10,7 +10,7 @@ require (
 	github.com/openshift/api v0.0.0-20250426060331-e577b4d83475
 	github.com/openshift/build-machinery-go v0.0.0-20250102153059-e85a1a7ecb5c
 	github.com/openshift/client-go v0.0.0-20250125113824-8e1f0b8fa9a7
-	github.com/openshift/library-go v0.0.0-20250228164547-bad2d1bf3a37
+	github.com/openshift/library-go v0.0.0-20250509201730-7de7fae45594
 	github.com/operator-framework/catalogd v1.0.0-rc1
 	github.com/operator-framework/helm-operator-plugins v0.7.0
 	github.com/operator-framework/operator-controller v1.0.0-rc1
