@@ -9,6 +9,18 @@ metadata:
     capability.openshift.io/name: "OperatorLifecycleManagerV1"
 rules:
   - apiGroups:
+      - networking
+    resources:
+      - networkpolicies
+    verbs:
+      - create
+      - update
+      - patch
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
       - config.openshift.io
     resources:
       - infrastructures
@@ -261,3 +273,15 @@ rules:
     - patch
     resourceNames:
     - operator-controller-openshift-ca
+  - apiGroups:
+    - networking.k8s.io
+    resources:
+    - networkpolicies
+    verbs:
+    - create
+    - update
+    - patch
+    - get
+    - list
+    - watch
+    - delete
