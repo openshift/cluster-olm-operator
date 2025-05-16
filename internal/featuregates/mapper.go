@@ -18,6 +18,8 @@ const (
 	PreflightPermissions = "PreflightPermissions"
 	// SingleOwnNamespaceInstallSupport: Enables support for Single- and OwnNamespace install modes.
 	SingleOwnNamespaceInstallSupport = "SingleOwnNamespaceInstallSupport"
+	// WebhookProviderOpenshiftServiceCA: Enables support for the installation of bundles containing webhooks using the openshift-serviceca tls certificate provider
+	WebhookProviderOpenshiftServiceCA = "WebhookProviderOpenshiftServiceCA"
 )
 
 type MapperInterface interface {
@@ -37,8 +39,9 @@ func NewMapper() *Mapper {
 	// Add your downstream to upstream mapping here
 	operatorControllerGates := map[configv1.FeatureGateName][]string{
 		// features.FeatureGateNewOLMMyDownstreamFeature: {MyUpstreamControllerOperatorFeature}
-		features.FeatureGateNewOLMPreflightPermissionChecks: {PreflightPermissions},
-		features.FeatureGateNewOLMOwnSingleNamespace:        {SingleOwnNamespaceInstallSupport},
+		features.FeatureGateNewOLMPreflightPermissionChecks:         {PreflightPermissions},
+		features.FeatureGateNewOLMOwnSingleNamespace:                {SingleOwnNamespaceInstallSupport},
+		features.FeatureGateNewOLMWebhookProviderOpenshiftServiceCA: {WebhookProviderOpenshiftServiceCA},
 	}
 	catalogdGates := map[configv1.FeatureGateName][]string{
 		// features.FeatureGateNewOLMMyDownstreamFeature: {MyUpstreamCatalogdFeature}
