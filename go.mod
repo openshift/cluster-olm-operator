@@ -4,6 +4,8 @@ go 1.23.0
 
 toolchain go1.23.4
 
+replace github.com/openshift/api => ../openshift-api
+
 require (
 	github.com/blang/semver/v4 v4.0.0
 	github.com/go-logr/logr v1.4.2
