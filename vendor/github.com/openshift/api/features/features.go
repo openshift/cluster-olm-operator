@@ -511,7 +511,7 @@ var (
 							reportProblemsToJiraComponent("olm").
 							contactPerson("tshort").
 							productScope(ocpSpecific).
-							enhancementPR("https://github.com/openshift/enhancements/pull/1799").
+							enhancementPR("https://github.com/openshift/enhancements/pull/1768").
 							enableForClusterProfile(SelfManaged, configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 							mustRegister()
 
@@ -523,11 +523,11 @@ var (
 						enableForClusterProfile(SelfManaged, configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 						mustRegister()
 
-	FeatureGateNewOLMWebhookSupport = newFeatureGate("NewOLMOwnWebhookSupport").
+	FeatureGateNewOLMWebhookProviderOpenshiftServiceCA = newFeatureGate("NewOLMWebhookProviderOpenshiftServiceCA").
 						reportProblemsToJiraComponent("olm").
 						contactPerson("pegoncal").
 						productScope(ocpSpecific).
-						enhancementPR("https://github.com/openshift/enhancements/pull/1774").
+						enhancementPR("https://github.com/openshift/enhancements/pull/1799").
 						enableForClusterProfile(SelfManaged, configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 						mustRegister()
 
