@@ -136,7 +136,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	}
 
 	operatorImageVersion := status.VersionForOperatorFromEnv()
-	nextOCPMinorVersion, err := utils.GetNextOCPMinorVersion(operatorImageVersion)
+	currentOCPMinorVersion, err := utils.GetCurrentOCPMinorVersion(operatorImageVersion)
 	if err != nil {
 		return err
 	}
@@ -150,7 +150,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 
 	incompatibleOperatorController := controller.NewIncompatibleOperatorController(
 		"OLMIncompatibleOperatorController",
-		nextOCPMinorVersion,
+		currentOCPMinorVersion,
 		cl.KubeClient,
 		cl.ClusterExtensionClient,
 		cl.OperatorClient,

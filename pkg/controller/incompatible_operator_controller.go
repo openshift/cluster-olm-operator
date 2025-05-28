@@ -41,17 +41,17 @@ const (
 
 type incompatibleOperatorController struct {
 	name                   string
-	nextOCPMinorVersion    *semver.Version
+	currentOCPMinorVersion *semver.Version
 	kubeclient             kubernetes.Interface
 	clusterExtensionClient *clients.ClusterExtensionClient
 	operatorClient         *clients.OperatorClient
 	logger                 logr.Logger
 }
 
-func NewIncompatibleOperatorController(name string, nextOCPMinorVersion *semver.Version, kubeclient kubernetes.Interface, clusterExtensionClient *clients.ClusterExtensionClient, operatorClient *clients.OperatorClient, eventRecorder events.Recorder) factory.Controller {
+func NewIncompatibleOperatorController(name string, currentOCPMinorVersion *semver.Version, kubeclient kubernetes.Interface, clusterExtensionClient *clients.ClusterExtensionClient, operatorClient *clients.OperatorClient, eventRecorder events.Recorder) factory.Controller {
 	c := &incompatibleOperatorController{
 		name:                   name,
-		nextOCPMinorVersion:    nextOCPMinorVersion,
+		currentOCPMinorVersion: currentOCPMinorVersion,
 		kubeclient:             kubeclient,
 		clusterExtensionClient: clusterExtensionClient,
 		operatorClient:         operatorClient,
@@ -68,7 +68,7 @@ func (c *incompatibleOperatorController) sync(ctx context.Context, _ factory.Syn
 	var updateStatusFn v1helpers.UpdateStatusFunc
 	incompatibleOperators, err := c.getIncompatibleOperators()
 	if len(incompatibleOperators) > 0 {
-		message := fmt.Sprintf("Found ClusterExtensions that require upgrades prior to upgrading cluster to version %d.%d: %s.", c.nextOCPMinorVersion.Major, c.nextOCPMinorVersion.Minor, strings.Join(incompatibleOperators, ","))
+		message := fmt.Sprintf("Found ClusterExtensions that require upgrades prior to upgrading cluster to version %d.%d: %s.", c.currentOCPMinorVersion.Major, c.currentOCPMinorVersion.Minor, strings.Join(incompatibleOperators, ","))
 		if err != nil {
 			message += fmt.Sprintf("\n Additionally the following errors were encountered while getting extension metadata: %s", err.Error())
 		}
@@ -167,7 +167,11 @@ func (c *incompatibleOperatorController) getIncompatibleOperators() ([]string, e
 					errs = append(errs, fmt.Errorf("error with cluster extension %s: error in bundle %s: %v", name, rel.Labels[bundleNameKey], err))
 					continue
 				}
-				if maxOCPVersion != nil && !maxOCPVersion.GTE(*c.nextOCPMinorVersion) {
+
+				// 1. maxOCPVersion is 4.18, currentOCPMinorVersion is 4.17 => compatible
+				// 2. maxOCPVersion is 4.18, currentOCPMinorVersion is 4.18 => incompatible
+				// 3. maxOCPVersion is 4.18, currentOCPMinorVersion is 4.19 => incompatible
+				if !utils.IsOperatorMaxOCPVersionCompatibleWithCluster(*maxOCPVersion, *c.currentOCPMinorVersion) {
 					// Incompatible
 					incompatibleOperators = append(incompatibleOperators, fmt.Sprintf("bundle %q for ClusterExtension %q", rel.Labels[bundleNameKey], name))
 				}
