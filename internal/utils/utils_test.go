@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestParseSemver(t *testing.T) {
+func TestToAllowedSemver(t *testing.T) {
 	tests := []struct {
 		name      string
 		jsonInput string
@@ -15,10 +15,21 @@ func TestParseSemver(t *testing.T) {
 		wantErr   bool
 	}{
 		{
-			name:      "valid float version",
+			name:      "valid float version 4.18",
 			jsonInput: `4.18`,
 			want:      &semver.Version{Major: 4, Minor: 18, Patch: 0},
 			wantErr:   false,
+		},
+		{
+			name:      "valid float version 4.19",
+			jsonInput: `4.19`,
+			want:      &semver.Version{Major: 4, Minor: 19, Patch: 0},
+			wantErr:   false,
+		},
+		{
+			name:      "invalid float version 4.19e1",
+			jsonInput: `4.19e1`,
+			wantErr:   true,
 		},
 		{
 			name:      "valid string version",
@@ -57,6 +68,41 @@ func TestParseSemver(t *testing.T) {
 				assert.NoError(t, err, "expected no error but got one")
 				assert.Equal(t, tt.want, got, "unexpected semver version")
 			}
+		})
+	}
+}
+
+func TestIsOperatorMaxOCPVersionCompatibleWithCluster(t *testing.T) {
+	tests := []struct {
+		name                   string
+		operatorMaxOCPVersion  semver.Version
+		currentOCPMinorVersion semver.Version
+		want                   bool
+	}{
+		{
+			name:                   "maxOCPVersion is 4.18, currentOCPMinorVersion is 4.17 => compatible",
+			operatorMaxOCPVersion:  semver.Version{Major: 4, Minor: 18, Patch: 0},
+			currentOCPMinorVersion: semver.Version{Major: 4, Minor: 17, Patch: 0},
+			want:                   true,
+		},
+		{
+			name:                   "maxOCPVersion is 4.18, currentOCPMinorVersion is 4.18 => incompatible",
+			operatorMaxOCPVersion:  semver.Version{Major: 4, Minor: 18, Patch: 0},
+			currentOCPMinorVersion: semver.Version{Major: 4, Minor: 18, Patch: 0},
+			want:                   false,
+		},
+		{
+			name:                   "maxOCPVersion is 4.18, currentOCPMinorVersion is 4.19 => incompatible",
+			operatorMaxOCPVersion:  semver.Version{Major: 4, Minor: 18, Patch: 0},
+			currentOCPMinorVersion: semver.Version{Major: 4, Minor: 19, Patch: 0},
+			want:                   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsOperatorMaxOCPVersionCompatibleWithCluster(tt.operatorMaxOCPVersion, tt.currentOCPMinorVersion)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
