@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -254,17 +253,23 @@ func UpdateDeploymentProxyHook(pc clients.ProxyClientInterface) deploymentcontro
 	}
 }
 
-func setContainerArg(con *corev1.Container, arg, value string) error {
-	if slices.ContainsFunc(con.Args, func(oldArg string) bool {
-		return strings.HasPrefix(oldArg, arg)
-	}) {
-		return fmt.Errorf("unexpected argument %q in container %q while building manifests", arg, con.Name)
+func setContainerArg(con *corev1.Container, arg, value string) {
+	// Need to remove any existing `arg` arguments first
+	// This could happen because the experimental manifest may have feature gates already enabled
+	var args []string
+	log := klog.FromContext(context.Background()).WithName("builder")
+
+	for _, a := range con.Args {
+		if !strings.HasPrefix(a, arg) {
+			args = append(args, a)
+		} else {
+			log.Info("Removing arg", "container", con.Name, "argument", a)
+		}
 	}
 
-	if value == "" {
-		return nil
+	if value != "" {
+		log.Info("Updated args", "container", con.Name, "arg", arg, "value", value)
+		args = append(args, fmt.Sprintf("%s=%s", arg, value))
 	}
-	klog.FromContext(context.Background()).WithName("builder").V(4).Info("Updated args", "container", con.Name, "arg", arg, "value", value)
-	con.Args = append(con.Args, fmt.Sprintf("%s=%s", arg, value))
-	return nil
+	con.Args = args
 }
