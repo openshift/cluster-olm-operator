@@ -6,6 +6,7 @@ import (
 	goflag "flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -20,6 +21,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -37,7 +39,10 @@ import (
 )
 
 const (
-	olmProxyController = "OLMProxyController"
+	olmProxyController    = "OLMProxyController"
+	assetPath             = "/operand-assets"
+	standardAssetPath     = "/operand-assets/standard"
+	experimentalAssetPath = "/operand-assets/experimental"
 )
 
 func main() {
@@ -89,9 +94,28 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		return err
 	}
 
+	log := klog.FromContext(ctx)
+	assets := assetPath
+	if _, err := os.Stat(standardAssetPath); err == nil {
+		log.Info("Standard manifest location available")
+		assets = standardAssetPath
+	}
+	if _, err := os.Stat(experimentalAssetPath); err == nil {
+		// experimental Path exists
+		log.Info("Experimental manifest location available")
+		fg, err := cl.ConfigClient.ConfigV1().FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("unable to retrieve featureSet: %w", err)
+		}
+		if strings.Contains(string(fg.Spec.FeatureSet), "TechPreview") {
+			log.Info("FeatureSet TechPreview enabled, using experimental manifests")
+			assets = experimentalAssetPath
+		}
+	}
+
 	clusterCatalogGvk := catalogdv1.GroupVersion.WithKind("ClusterCatalog")
 	cb := controller.Builder{
-		Assets:            os.DirFS("/operand-assets"),
+		Assets:            os.DirFS(assets),
 		Clients:           cl,
 		ControllerContext: cc,
 		KnownRESTMappings: map[schema.GroupVersionKind]*meta.RESTMapping{
@@ -196,7 +220,6 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 
 	cl.StartInformers(ctx)
 
-	log := klog.FromContext(ctx)
 	select {
 	case <-cl.FeatureGatesAccessor.InitialFeatureGatesObserved():
 		featureGates, _ := cl.FeatureGatesAccessor.CurrentFeatureGates()
