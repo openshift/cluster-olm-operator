@@ -45,6 +45,10 @@ const (
 	experimentalAssetPath = "/operand-assets/experimental"
 )
 
+var (
+	warnOnArgMismatch bool
+)
+
 func main() {
 	pflag.CommandLine.SetNormalizeFunc(utilflag.WordSepNormalizeFunc)
 	pflag.CommandLine.AddGoFlagSet(goflag.CommandLine)
@@ -72,6 +76,7 @@ func newRootCommand() *cobra.Command {
 		},
 	}
 	cmd.PersistentFlags().BoolVarP(&versionFlag, "version", "V", false, "Print the version number and exit")
+	cmd.PersistentFlags().BoolVar(&warnOnArgMismatch, "warn-on-arg-mismatch", false, "Warn, rather than error, when updating OLMv1 feature flags")
 	cmd.AddCommand(newStartCommand())
 	return cmd
 }
@@ -125,6 +130,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 				Scope:            meta.RESTScopeRoot,
 			},
 		},
+		WarnOnArgMismatch: warnOnArgMismatch,
 	}
 
 	staticResourceControllers, deploymentControllers, clusterCatalogControllers, relatedObjects, err := cb.BuildControllers("catalogd", "operator-controller")

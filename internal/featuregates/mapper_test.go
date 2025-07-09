@@ -58,8 +58,8 @@ func TestFormatAsEnabledArgs(t *testing.T) {
 		},
 		{
 			name:     "multiple feature gates",
-			in:       []string{"testGate1", "testGate2", "testGate3"},
-			expected: "testGate1=true,testGate2=true,testGate2=true",
+			in:       []string{"testGate3", "testGate2", "testGate1"},
+			expected: "testGate1=true,testGate2=true,testGate3=true",
 		},
 	}
 	for _, testCase := range testCases {

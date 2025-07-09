@@ -58,8 +58,10 @@ spec:
           name: metrics
         command:
         - /cluster-olm-operator
+        # Remove --warn-on-arg-mismatch after branch cut
         args:
         - start
+        - --warn-on-arg-mismatch
         imagePullPolicy: IfNotPresent
         env:
         - name: OPERATOR_NAME

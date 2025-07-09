@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -37,11 +38,16 @@ import (
 	catalogdv1 "github.com/operator-framework/catalogd/api/v1"
 )
 
+var (
+	errorOnArgMismatch bool
+)
+
 type Builder struct {
 	Assets            fs.FS
 	Clients           *clients.Clients
 	ControllerContext *controllercmd.ControllerContext
 	KnownRESTMappings map[schema.GroupVersionKind]*meta.RESTMapping
+	WarnOnArgMismatch bool
 }
 
 func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory.Controller, map[string]factory.Controller, map[string]factory.Controller, []configv1.ObjectReference, error) {
@@ -53,6 +59,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 		errs                      []error
 	)
 
+	errorOnArgMismatch = !b.WarnOnArgMismatch
 	titler := cases.Title(language.English)
 	for _, subDirectory := range subDirectories {
 		var staticResourceFiles []string
@@ -253,23 +260,61 @@ func UpdateDeploymentProxyHook(pc clients.ProxyClientInterface) deploymentcontro
 	}
 }
 
-func setContainerArg(con *corev1.Container, arg, value string) {
+// The return behavior:
+// 1. If arg type does not already exist, and we're only adding arg = success (i.e. adding only case)
+// 2. If arg type does already exist, and the args we're setting match = success (i.e. match case)
+// 3. If arg type does already exist, and the args we're setting DON'T march = error (i.e. mismatch case)
+// 4. If arg type does already exist, and the args we're setting are blank = success (i.e. delete only case)
+func setContainerArg(con *corev1.Container, arg, value string) error {
 	// Need to remove any existing `arg` arguments first
 	// This could happen because the experimental manifest may have feature gates already enabled
 	var args []string
+	var origValues []string
 	log := klog.FromContext(context.Background()).WithName("builder")
 
 	for _, a := range con.Args {
 		if !strings.HasPrefix(a, arg) {
 			args = append(args, a)
 		} else {
-			log.Info("Removing arg", "container", con.Name, "argument", a)
+			// Save off original argument value by removing prefix
+			s := strings.TrimPrefix(a, arg)
+			s = strings.TrimPrefix(s, "=")
+			log.Info("Removing argument", "container", con.Name, "arg", arg, "value", s)
+			if s != "" {
+				origValues = append(origValues, s)
+			}
 		}
+	}
+
+	origValue := ""
+	if len(origValues) > 0 {
+		sort.Strings(origValues)
+		origValue = strings.Join(origValues, ",")
+	} else {
+		// Otherweise, there were no original arguments, so just set what was passed in
+		log.Info("No existing arguments of type", "arg", arg)
+	}
+
+	// Check to see if the original values match the new values
+	if value != origValue {
+		err := fmt.Errorf("new and existing arguments do not match")
+		log.Error(err, "New and existing arguments do not match", "arg", arg, "new", value, "existing", origValue)
+		if errorOnArgMismatch {
+			return err
+		}
+		// This case is for development to allow things to proceed even if they don't match
+	} else {
+		// Otherwise they match, so just substitute the new arguments
+		log.Info("Existing arguments match new arguments", "arg", arg, "value", value)
 	}
 
 	if value != "" {
 		log.Info("Updated args", "container", con.Name, "arg", arg, "value", value)
 		args = append(args, fmt.Sprintf("%s=%s", arg, value))
+	} else {
+		log.Info("Cleared arguments", "container", con.Name, "arg", arg)
 	}
+	// Otherwise, the arguments are rmoved
 	con.Args = args
+	return nil
 }

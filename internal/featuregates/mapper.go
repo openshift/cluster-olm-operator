@@ -1,8 +1,8 @@
 package featuregates
 
 import (
-	"bytes"
 	"errors"
+	"sort"
 	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -93,19 +93,12 @@ func (m *Mapper) CatalogdUpstreamForDownstream(downstreamGate configv1.FeatureGa
 // FormatAsEnabledArgs combines list of feature gate names into
 // an all-enabled arg format of <feature_gate_name1>=true,<feature_gate_name1>=true etc.
 func FormatAsEnabledArgs(enabledFeatureGates []string) string {
-	buf := bytes.Buffer{}
+	args := make([]string, 0, len(enabledFeatureGates))
+	sort.Strings(enabledFeatureGates)
 	for _, gateName := range enabledFeatureGates {
-		buf.WriteString(gateName)
-		buf.WriteRune('=')
-		buf.WriteString("true")
-		buf.WriteRune(',')
+		args = append(args, gateName+"=true")
 	}
-	if buf.Len() > 0 {
-		// get rid of trailing ','
-		buf.Truncate(buf.Len() - 1)
-	}
-
-	return buf.String()
+	return strings.Join(args, ",")
 }
 
 func getKeys(m map[configv1.FeatureGateName][]string) []configv1.FeatureGateName {
