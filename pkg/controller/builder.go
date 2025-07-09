@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -28,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/klog/v2"
 
@@ -253,23 +255,31 @@ func UpdateDeploymentProxyHook(pc clients.ProxyClientInterface) deploymentcontro
 	}
 }
 
-func setContainerArg(con *corev1.Container, arg, value string) {
-	// Need to remove any existing `arg` arguments first
-	// This could happen because the experimental manifest may have feature gates already enabled
-	var args []string
-	log := klog.FromContext(context.Background()).WithName("builder")
+// The return behavior:
+// 1. If the input arg value matches the container argument = success
+// 2. If the input arg value does not match the container argument = error
+func setContainerFeatureGateArg(con *corev1.Container, value string) error {
+	// Need to remove any existing `--feature-gates` arguments first
+	// This could happen because the experimental manifest may have feature-gates already enabled
+	const arg = "--feature-gates="
+	foundValues := sets.New[string]()
 
-	for _, a := range con.Args {
-		if !strings.HasPrefix(a, arg) {
-			args = append(args, a)
-		} else {
-			log.Info("Removing arg", "container", con.Name, "argument", a)
+	con.Args = slices.DeleteFunc(con.Args, func(s string) bool {
+		values, found := strings.CutPrefix(s, arg)
+		if found {
+			foundValues.Insert(strings.Split(values, ",")...)
 		}
+		return found
+	})
+
+	haveValues := strings.Join(slices.Sorted(slices.Values(foundValues.UnsortedList())), ",")
+	wantValues := strings.Join(slices.Sorted(slices.Values(strings.Split(value, ","))), ",")
+	if haveValues != wantValues {
+		return fmt.Errorf("argument %q has conflicting values: existing=%q, new=%q", arg, haveValues, wantValues)
 	}
 
 	if value != "" {
-		log.Info("Updated args", "container", con.Name, "arg", arg, "value", value)
-		args = append(args, fmt.Sprintf("%s=%s", arg, value))
+		con.Args = append(con.Args, arg+value)
 	}
-	con.Args = args
+	return nil
 }

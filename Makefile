@@ -1,6 +1,6 @@
 SHELL := /usr/bin/env bash
 
-GO_TEST_PACKAGES :=./pkg/... ./cmd/...
+GO_TEST_PACKAGES :=./pkg/... ./cmd/... ./internal/...
 GO_BUILD_BINDIR := bin
 
 .PHONY: all
