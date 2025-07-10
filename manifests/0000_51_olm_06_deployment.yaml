@@ -36,6 +36,8 @@ spec:
           volumeMounts:
             - mountPath: /operand-assets
               name: operand-assets
+          securityContext:
+            readOnlyRootFilesystem: true
           terminationMessagePolicy: FallbackToLogsOnError
         - name: copy-operator-controller-manifests
           image: quay.io/openshift/origin-olm-operator-controller:latest
@@ -48,6 +50,8 @@ spec:
           volumeMounts:
           - mountPath: /operand-assets
             name: operand-assets
+          securityContext:
+            readOnlyRootFilesystem: true
           terminationMessagePolicy: FallbackToLogsOnError
       containers:
       - name: cluster-olm-operator
@@ -87,12 +91,16 @@ spec:
           name: cluster-olm-operator-serving-cert
         - mountPath: /operand-assets
           name: operand-assets
+        - mountPath: /tmp
+          name: tmp
       volumes:
       - name: cluster-olm-operator-serving-cert
         secret:
           secretName: cluster-olm-operator-serving-cert
           optional: true
       - name: operand-assets
+        emptyDir: {}
+      - name: tmp
         emptyDir: {}
       nodeSelector:
         kubernetes.io/os: linux
