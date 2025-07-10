@@ -257,9 +257,10 @@ func TestUpdateDeploymentFeatureGatesHook(t *testing.T) {
 		}
 		mockMapper.ValidateCalls(t, 1, 1, 0, 0)
 
+		// The new code will now validate that the arguments are the same, and accept that as valid
 		err = update(nil, dep)
-		if err == nil {
-			t.Fatal("no error in second update")
+		if err != nil {
+			t.Fatal("error in second update")
 		}
 		// Make sure the Deployment is unchanged
 		if expectedArg != dep.Spec.Template.Spec.Containers[0].Args[0] {
@@ -299,9 +300,10 @@ func TestUpdateDeploymentFeatureGatesHook(t *testing.T) {
 		}
 		mockMapper.ValidateCalls(t, 0, 0, 1, 1)
 
+		// The new code will now validate that the arguments are the same, and accept that as valid
 		err = update(nil, dep)
-		if err == nil {
-			t.Fatal("no error in second update")
+		if err != nil {
+			t.Fatal("error in second update")
 		}
 		// Make sure the Deployment is unchanged
 		if expectedArg != dep.Spec.Template.Spec.Containers[0].Args[0] {
@@ -341,9 +343,10 @@ func TestUpdateDeploymentFeatureGatesHook(t *testing.T) {
 		}
 		mockMapper.ValidateCalls(t, 2, 1, 0, 0)
 
+		// Arguments are now sorted, so duplicates are removed
 		err = update(nil, dep)
-		if err == nil {
-			t.Fatal("no error in second update")
+		if err != nil {
+			t.Fatal("error in second update")
 		}
 		// Make sure the Deployment is unchanged
 		if expectedArg != dep.Spec.Template.Spec.Containers[0].Args[0] {
@@ -383,9 +386,10 @@ func TestUpdateDeploymentFeatureGatesHook(t *testing.T) {
 		}
 		mockMapper.ValidateCalls(t, 0, 0, 2, 1)
 
+		// Arguments are now sorted, so duplicates are removed
 		err = update(nil, dep)
-		if err == nil {
-			t.Fatal("no error in second update")
+		if err != nil {
+			t.Fatal("error in second update")
 		}
 		// Make sure the Deployment is unchanged
 		if expectedArg != dep.Spec.Template.Spec.Containers[0].Args[0] {

@@ -64,7 +64,10 @@ func UpdateDeploymentFeatureGatesHook(
 			if !strings.EqualFold(deployment.Spec.Template.Spec.Containers[i].Name, "manager") {
 				continue
 			}
-			setContainerArg(&deployment.Spec.Template.Spec.Containers[i], "--feature-gates", argToSet)
+			err = setContainerArg(&deployment.Spec.Template.Spec.Containers[i], "--feature-gates", argToSet)
+			if err != nil {
+				errs = append(errs, err)
+			}
 		}
 		if len(errs) > 0 {
 			return errors.Join(errs...)
