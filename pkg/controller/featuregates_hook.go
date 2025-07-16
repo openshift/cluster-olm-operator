@@ -57,14 +57,16 @@ func UpdateDeploymentFeatureGatesHook(
 		}
 		logger.V(4).Info("enabled feature gates", "feature gates", upstreamGates, "deployment", deployment.Name)
 
-		argToSet := internalfeatures.FormatAsEnabledArgs(upstreamGates)
+		featureGatesToSet := internalfeatures.FormatAsEnabledArgs(upstreamGates)
 		var errs []error
 		for i := range deployment.Spec.Template.Spec.Containers {
 			logger.V(4).Info("iterating containers", "container", deployment.Spec.Template.Spec.Containers[i].Name, "deployment", deployment.Name)
 			if !strings.EqualFold(deployment.Spec.Template.Spec.Containers[i].Name, "manager") {
 				continue
 			}
-			setContainerArg(&deployment.Spec.Template.Spec.Containers[i], "--feature-gates", argToSet)
+			if err := setContainerFeatureGateArg(&deployment.Spec.Template.Spec.Containers[i], featureGatesToSet); err != nil {
+				errs = append(errs, err)
+			}
 		}
 		if len(errs) > 0 {
 			return errors.Join(errs...)
