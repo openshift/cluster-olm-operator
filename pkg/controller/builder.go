@@ -55,11 +55,14 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 		errs                      []error
 	)
 
+	log := klog.FromContext(context.Background()).WithName("builder")
 	titler := cases.Title(language.English)
 	for _, subDirectory := range subDirectories {
 		var staticResourceFiles []string
 		namePrefix := strings.ReplaceAll(titler.String(subDirectory), "-", "")
+		log.Info("about to walk assets", "assets", b.Assets)
 		if err := fs.WalkDir(b.Assets, subDirectory, func(path string, d fs.DirEntry, err error) error {
+			log.Info("walking directory", "path", path)
 			if err != nil {
 				return err
 			}
@@ -99,6 +102,10 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 				Namespace: manifest.GetNamespace(),
 				Name:      manifest.GetName(),
 			})
+			labels := manifest.GetLabels()
+			if generator, ok := labels["olm.operatorframework.io/generator"]; ok {
+				log.Info("found generator", "label", generator)
+			}
 
 			if manifestGVK.Kind == "Deployment" && manifestGVK.Group == "apps" {
 				controllerName := controllerNameForObject(namePrefix, &manifest)
@@ -263,8 +270,10 @@ func setContainerFeatureGateArg(con *corev1.Container, value string) error {
 	// This could happen because the experimental manifest may have feature-gates already enabled
 	const arg = "--feature-gates="
 	foundValues := sets.New[string]()
+	log := klog.FromContext(context.Background()).WithName("builder")
 
 	con.Args = slices.DeleteFunc(con.Args, func(s string) bool {
+		log.Info("processing argument", "argument", s)
 		values, found := strings.CutPrefix(s, arg)
 		if found {
 			foundValues.Insert(strings.Split(values, ",")...)
@@ -279,6 +288,7 @@ func setContainerFeatureGateArg(con *corev1.Container, value string) error {
 	}
 
 	if value != "" {
+		log.Info("adding argument", "argument", arg, "value", value)
 		con.Args = append(con.Args, arg+value)
 	}
 	return nil
