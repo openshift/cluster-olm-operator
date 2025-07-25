@@ -107,9 +107,8 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		if err != nil {
 			return fmt.Errorf("unable to retrieve featureSet: %w", err)
 		}
-		// Catches "CustomNoUpgrade", "TechPreviewNoUpgrade", "DevPreviewNoUpgrade"
-		if strings.Contains(string(fg.Spec.FeatureSet), "NoUpgrade") {
-			log.Info("Using experimental manifests", "featureSet", fg.Spec.FeatureSet)
+		if strings.Contains(string(fg.Spec.FeatureSet), "TechPreview") {
+			log.Info("FeatureSet TechPreview enabled, using experimental manifests")
 			assets = experimentalAssetPath
 		}
 	}
