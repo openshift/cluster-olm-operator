@@ -6,7 +6,6 @@ import (
 	goflag "flag"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -94,6 +93,8 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		return err
 	}
 
+	var featureSet configv1.FeatureSet
+
 	log := klog.FromContext(ctx)
 	assets := assetPath
 	if _, err := os.Stat(standardAssetPath); err == nil {
@@ -107,8 +108,22 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		if err != nil {
 			return fmt.Errorf("unable to retrieve featureSet: %w", err)
 		}
-		// Catches "CustomNoUpgrade", "TechPreviewNoUpgrade", "DevPreviewNoUpgrade"
-		if strings.Contains(string(fg.Spec.FeatureSet), "NoUpgrade") {
+
+		featureSet = fg.Spec.FeatureSet
+		useExperimental := false
+		switch featureSet {
+		case configv1.CustomNoUpgrade:
+			useExperimental = true
+		case configv1.DevPreviewNoUpgrade:
+			useExperimental = true
+		case configv1.TechPreviewNoUpgrade:
+			useExperimental = true
+		case configv1.Default:
+		default:
+			log.Info("Unknown featureSet value, using standard manifests", "featureSet", fg.Spec.FeatureSet)
+		}
+
+		if useExperimental {
 			log.Info("Using experimental manifests", "featureSet", fg.Spec.FeatureSet)
 			assets = experimentalAssetPath
 		}
@@ -126,6 +141,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 				Scope:            meta.RESTScopeRoot,
 			},
 		},
+		FeatureSet: featureSet,
 	}
 
 	staticResourceControllers, deploymentControllers, clusterCatalogControllers, relatedObjects, err := cb.BuildControllers("catalogd", "operator-controller")
