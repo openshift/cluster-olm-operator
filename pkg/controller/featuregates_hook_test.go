@@ -101,7 +101,7 @@ func TestUpdateDeploymentFeatureGatesHook(t *testing.T) {
 		}
 		mockMapper := &MockFeatureGateMapper{}
 
-		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper)
+		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper, configv1.Default)
 		err := update(nil, dep)
 		if err == nil {
 			t.Fatalf("expected error but got nil")
@@ -121,7 +121,7 @@ func TestUpdateDeploymentFeatureGatesHook(t *testing.T) {
 		}
 		mockMapper := &MockFeatureGateMapper{}
 
-		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper)
+		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper, configv1.Default)
 		err := update(nil, dep)
 		if err != nil {
 			t.Fatalf("unexpected error in first update: %v", err)
@@ -144,7 +144,7 @@ func TestUpdateDeploymentFeatureGatesHook(t *testing.T) {
 		}
 		mockMapper := &MockFeatureGateMapper{ctrlDownstreamKeys: []configv1.FeatureGateName{features.FeatureGateNewOLM}}
 
-		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper)
+		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper, configv1.Default)
 		err := update(nil, dep)
 		if err != nil {
 			t.Fatalf("unexpected error in first update: %v", err)
@@ -167,7 +167,7 @@ func TestUpdateDeploymentFeatureGatesHook(t *testing.T) {
 		}
 		mockMapper := &MockFeatureGateMapper{catalogDownstreamKeys: []configv1.FeatureGateName{features.FeatureGateNewOLM}}
 
-		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper)
+		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper, configv1.Default)
 		err := update(nil, dep)
 		if err != nil {
 			t.Fatalf("unexpected error in first update: %v", err)
@@ -191,7 +191,7 @@ func TestUpdateDeploymentFeatureGatesHook(t *testing.T) {
 		}
 		mockMapper := &MockFeatureGateMapper{ctrlDownstreamKeys: enabledFeatures}
 
-		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper)
+		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper, configv1.Default)
 		err := update(nil, dep)
 		if err != nil {
 			t.Fatalf("unexpected error in first update: %v", err)
@@ -215,7 +215,7 @@ func TestUpdateDeploymentFeatureGatesHook(t *testing.T) {
 		}
 		mockMapper := &MockFeatureGateMapper{catalogDownstreamKeys: enabledFeatures}
 
-		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper)
+		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper, configv1.Default)
 		err := update(nil, dep)
 		if err != nil {
 			t.Fatalf("unexpected error in first update: %v", err)
@@ -244,7 +244,7 @@ func TestUpdateDeploymentFeatureGatesHook(t *testing.T) {
 			ctrlOut:            []string{"TestUpstreamGate2", "TestUpstreamGate1"},
 		}
 
-		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper)
+		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper, configv1.Default)
 		err := update(nil, dep)
 		if err != nil {
 			t.Fatalf("unexpected error in first update: %v", err)
@@ -277,7 +277,7 @@ func TestUpdateDeploymentFeatureGatesHook(t *testing.T) {
 			catalogOut:            []string{"TestUpstreamGate2", "TestUpstreamGate1"},
 		}
 
-		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper)
+		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper, configv1.Default)
 		err := update(nil, dep)
 		if err != nil {
 			t.Fatalf("unexpected error in first update: %v", err)
@@ -310,7 +310,7 @@ func TestUpdateDeploymentFeatureGatesHook(t *testing.T) {
 			ctrlOut:            []string{"TestUpstreamGate1", "TestUpstreamGate2", "TestUpstreamGate1"},
 		}
 
-		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper)
+		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper, configv1.Default)
 		err := update(nil, dep)
 		if err != nil {
 			t.Fatalf("unexpected error in first update: %v", err)
@@ -343,7 +343,7 @@ func TestUpdateDeploymentFeatureGatesHook(t *testing.T) {
 			catalogOut:            []string{"TestUpstreamGate1", "TestUpstreamGate2", "TestUpstreamGate1"},
 		}
 
-		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper)
+		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper, configv1.Default)
 		err := update(nil, dep)
 		if err != nil {
 			t.Fatalf("unexpected error in first update: %v", err)
@@ -376,7 +376,7 @@ func TestUpdateDeploymentFeatureGatesHook(t *testing.T) {
 			ctrlOut:            []string{"TestUpstreamGate1", "TestUpstreamGate2"},
 		}
 
-		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper)
+		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper, configv1.Default)
 		err := update(nil, dep)
 		if err == nil {
 			t.Fatalf("expected error in update")
@@ -402,7 +402,7 @@ func TestUpdateDeploymentFeatureGatesHook(t *testing.T) {
 			catalogOut:            []string{"TestUpstreamGate1", "TestUpstreamGate2"},
 		}
 
-		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper)
+		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper, configv1.Default)
 		err := update(nil, dep)
 		if err == nil {
 			t.Fatalf("expected error in update")
@@ -431,7 +431,7 @@ func TestUpdateDeploymentFeatureGatesHook(t *testing.T) {
 			ctrlOut:            []string{"TestUpstreamGate1", "TestUpstreamGate2", "TestUpstreamGate3"},
 		}
 
-		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper)
+		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper, configv1.Default)
 		err := update(nil, dep)
 		if err != nil {
 			t.Fatalf("unexpected error in first update: %v", err)
@@ -468,7 +468,7 @@ func TestUpdateDeploymentFeatureGatesHook(t *testing.T) {
 			catalogOut:            []string{"TestUpstreamGate1", "TestUpstreamGate2", "TestUpstreamGate3"},
 		}
 
-		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper)
+		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper, configv1.Default)
 		err := update(nil, dep)
 		if err != nil {
 			t.Fatalf("unexpected error in first update: %v", err)
@@ -484,6 +484,68 @@ func TestUpdateDeploymentFeatureGatesHook(t *testing.T) {
 		expectedArg = "--other=value=true"
 		if expectedArg != dep.Spec.Template.Spec.Containers[0].Args[0] {
 			t.Fatalf("args differ, container: %q, expected: %q", dep.Spec.Template.Spec.Containers[0].Args[0], expectedArg)
+		}
+		mockMapper.ValidateCalls(t, 0, 0, 2, 1)
+	})
+
+	t.Run("catalogd mapping exists with mismatch feature gates and matching container and CustomNoUpgrade", func(t *testing.T) {
+		dep := testDep.DeepCopy()
+		dep.Name = catalogdDeploymentName
+		dep.Spec.Template.Spec.Containers[0].Name = "manager"
+		dep.Spec.Template.Spec.Containers[0].Args = []string{"--feature-gates=TestUpstreamGate2=true", "--feature-gates=TestUpstreamGate3=true"}
+
+		enabledFeatures := []configv1.FeatureGateName{features.FeatureGateNewOLM, features.FeatureGateExample}
+		mockAccessor := &MockFeatureGateAccessor{
+			featureGate: featuregates.NewFeatureGate(
+				enabledFeatures, []configv1.FeatureGateName{},
+			),
+			err: nil,
+		}
+		mockMapper := &MockFeatureGateMapper{
+			catalogDownstreamKeys: enabledFeatures,
+			catalogOut:            []string{"TestUpstreamGate1", "TestUpstreamGate2"},
+		}
+
+		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper, configv1.CustomNoUpgrade)
+		// Current: Gate2 + Gate3
+		// Setting: Gate1 + Gate2
+		// This is a mismatch, but because of the CustomNoUpgrade setting, it should ignore the mismatch
+		err := update(nil, dep)
+		if err != nil {
+			t.Fatalf("unexpected error in update")
+		}
+		if len(dep.Spec.Template.Spec.Containers[0].Args) != 1 {
+			t.Fatalf("args length not 1: %+v", dep)
+		}
+		expectedArg := "--feature-gates=TestUpstreamGate1=true,TestUpstreamGate2=true"
+		if expectedArg != dep.Spec.Template.Spec.Containers[0].Args[0] {
+			t.Fatalf("args differ, container: %q, expected: %q", dep.Spec.Template.Spec.Containers[0].Args[0], expectedArg)
+		}
+		mockMapper.ValidateCalls(t, 0, 0, 2, 1)
+	})
+
+	t.Run("catalogd mapping exists with mismatch feature gates and matching container and DevPreviewNoUpgrade", func(t *testing.T) {
+		dep := testDep.DeepCopy()
+		dep.Name = catalogdDeploymentName
+		dep.Spec.Template.Spec.Containers[0].Name = "manager"
+		dep.Spec.Template.Spec.Containers[0].Args = []string{"--feature-gates=TestUpstreamGate2=true", "--feature-gates=TestUpstreamGate3=true"}
+
+		enabledFeatures := []configv1.FeatureGateName{features.FeatureGateNewOLM, features.FeatureGateExample}
+		mockAccessor := &MockFeatureGateAccessor{
+			featureGate: featuregates.NewFeatureGate(
+				enabledFeatures, []configv1.FeatureGateName{},
+			),
+			err: nil,
+		}
+		mockMapper := &MockFeatureGateMapper{
+			catalogDownstreamKeys: enabledFeatures,
+			catalogOut:            []string{"TestUpstreamGate1", "TestUpstreamGate2"},
+		}
+
+		update := controller.UpdateDeploymentFeatureGatesHook(mockAccessor, mockMapper, configv1.DevPreviewNoUpgrade)
+		err := update(nil, dep)
+		if err == nil {
+			t.Fatalf("expected error in update")
 		}
 		mockMapper.ValidateCalls(t, 0, 0, 2, 1)
 	})

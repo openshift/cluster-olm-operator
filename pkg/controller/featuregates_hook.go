@@ -27,6 +27,7 @@ const (
 func UpdateDeploymentFeatureGatesHook(
 	featuresAccessor featuregates.FeatureGateAccess,
 	featuresMapper internalfeatures.MapperInterface,
+	featureSet configv1.FeatureSet,
 ) deploymentcontroller.DeploymentHookFunc {
 	return func(_ *operatorv1.OperatorSpec, deployment *appsv1.Deployment) error {
 		logger := klog.FromContext(context.Background()).WithName("feature_gates_hook")
@@ -64,7 +65,10 @@ func UpdateDeploymentFeatureGatesHook(
 			if !strings.EqualFold(deployment.Spec.Template.Spec.Containers[i].Name, "manager") {
 				continue
 			}
-			if err := setContainerFeatureGateArg(&deployment.Spec.Template.Spec.Containers[i], featureGatesToSet); err != nil {
+
+			// If featureSet is not found in AllFixedFeatureSets, then it is Custom, so we need to ignore mismatches
+			ignoreMismatch := slices.Index(configv1.AllFixedFeatureSets, featureSet) == -1
+			if err := setContainerFeatureGateArg(&deployment.Spec.Template.Spec.Containers[i], featureGatesToSet, ignoreMismatch); err != nil {
 				errs = append(errs, err)
 			}
 		}

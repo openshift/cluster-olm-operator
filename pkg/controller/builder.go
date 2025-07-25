@@ -44,6 +44,7 @@ type Builder struct {
 	Clients           *clients.Clients
 	ControllerContext *controllercmd.ControllerContext
 	KnownRESTMappings map[schema.GroupVersionKind]*meta.RESTMapping
+	FeatureSet        configv1.FeatureSet
 }
 
 func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory.Controller, map[string]factory.Controller, map[string]factory.Controller, []configv1.ObjectReference, error) {
@@ -119,7 +120,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 						replaceImageHook("${KUBE_RBAC_PROXY_IMAGE}", "KUBE_RBAC_PROXY_IMAGE"),
 					},
 					UpdateDeploymentProxyHook(b.Clients.ProxyClient),
-					UpdateDeploymentFeatureGatesHook(b.Clients.FeatureGatesAccessor, b.Clients.FeatureGateMapper),
+					UpdateDeploymentFeatureGatesHook(b.Clients.FeatureGatesAccessor, b.Clients.FeatureGateMapper, b.FeatureSet),
 				)
 				return nil
 			}
@@ -258,7 +259,8 @@ func UpdateDeploymentProxyHook(pc clients.ProxyClientInterface) deploymentcontro
 // The return behavior:
 // 1. If the input arg value matches the container argument = success
 // 2. If the input arg value does not match the container argument = error
-func setContainerFeatureGateArg(con *corev1.Container, value string) error {
+// 3. The ignoreMismatch argument ignores mismatches in want vs have arguments
+func setContainerFeatureGateArg(con *corev1.Container, value string, ignoreMismatch bool) error {
 	// Need to remove any existing `--feature-gates` arguments first
 	// This could happen because the experimental manifest may have feature-gates already enabled
 	const arg = "--feature-gates="
@@ -274,7 +276,7 @@ func setContainerFeatureGateArg(con *corev1.Container, value string) error {
 
 	haveValues := strings.Join(slices.Sorted(slices.Values(foundValues.UnsortedList())), ",")
 	wantValues := strings.Join(slices.Sorted(slices.Values(strings.Split(value, ","))), ",")
-	if haveValues != wantValues {
+	if !ignoreMismatch && haveValues != wantValues {
 		return fmt.Errorf("argument %q has conflicting values: existing=%q, new=%q", arg, haveValues, wantValues)
 	}
 
