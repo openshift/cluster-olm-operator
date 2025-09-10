@@ -70,7 +70,7 @@ func newRootCommand() *cobra.Command {
 			}
 		},
 	}
-	cmd.PersistentFlags().BoolVarP(&versionFlag, "version", "V", false, "Print the version number and exit")
+	cmd.PersistentFlags().BoolVarP(&versionFlag, "version", "V", false, "Print the version number and exit. Test")
 	cmd.AddCommand(newStartCommand())
 	return cmd
 }
