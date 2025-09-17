@@ -183,11 +183,6 @@ func setupFeatureGatesAccessor(
 		configInformerFactory.Config().V1().ClusterVersions(), configInformerFactory.Config().V1().FeatureGates(),
 		eventRecorder,
 	)
-	// modify the default behavior of calling exit(0) to noop whenever a FeatureGates set changes in cluster
-	// reconsider this change if there ever comes a feature flag that affects the cluster-olm-operator directly
-	// see: https://github.com/openshift/cluster-olm-operator/pull/102#discussion_r1926861888
-	featureGateAccessor.SetChangeHandler(func(_ featuregates.FeatureChange) {})
-
 	return featureGateAccessor
 }
 

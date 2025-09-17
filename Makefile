@@ -26,4 +26,11 @@ clean: ## Remove binaries and test artifacts
 lint: $(GOLANGCI_LINT) ## Run golangci linter.
 	$(GOLANGCI_LINT) run $(GOLANGCI_LINT_ARGS)
 
+HELM_OUTPUT := $(shell mktemp -d)
+export HELM_OUTPUT
+.PHONY: helm-test-output
+helm-test-output: $(HELM)
+	@echo Output helm to $(HELM_OUTPUT)
+	$(HELM) template olmv1 testdata/olmv1 --values testdata/openshift.yaml > $(HELM_OUTPUT)/hello-world.yaml
 
+test-unit: helm-test-output
