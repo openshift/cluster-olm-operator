@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -29,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/klog/v2"
 
@@ -40,7 +38,7 @@ import (
 )
 
 type Builder struct {
-	Assets            fs.FS
+	Assets            string
 	Clients           *clients.Clients
 	ControllerContext *controllercmd.ControllerContext
 	KnownRESTMappings map[schema.GroupVersionKind]*meta.RESTMapping
@@ -57,10 +55,17 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 	)
 
 	titler := cases.Title(language.English)
+
 	for _, subDirectory := range subDirectories {
 		var staticResourceFiles []string
 		namePrefix := strings.ReplaceAll(titler.String(subDirectory), "-", "")
-		if err := fs.WalkDir(b.Assets, subDirectory, func(path string, d fs.DirEntry, err error) error {
+
+		err := b.renderHelmTemplate(subDirectory)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+
+		if err := filepath.WalkDir(filepath.Join(b.Assets, subDirectory), func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
@@ -72,7 +77,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 				return nil
 			}
 
-			manifestData, err := fs.ReadFile(b.Assets, path)
+			manifestData, err := os.ReadFile(filepath.Join(b.Assets, path))
 			if err != nil {
 				errs = append(errs, fmt.Errorf("error reading assets file %q: %w", path, err))
 				return nil
@@ -115,12 +120,8 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 					},
 					[]deploymentcontroller.ManifestHookFunc{
 						replaceVerbosityHook("${LOG_VERBOSITY}"),
-						replaceImageHook("${CATALOGD_IMAGE}", "CATALOGD_IMAGE"),
-						replaceImageHook("${OPERATOR_CONTROLLER_IMAGE}", "OPERATOR_CONTROLLER_IMAGE"),
-						replaceImageHook("${KUBE_RBAC_PROXY_IMAGE}", "KUBE_RBAC_PROXY_IMAGE"),
 					},
 					UpdateDeploymentProxyHook(b.Clients.ProxyClient),
-					UpdateDeploymentFeatureGatesHook(b.Clients.FeatureGatesAccessor, b.Clients.FeatureGateMapper, b.FeatureSet),
 				)
 				return nil
 			}
@@ -153,7 +154,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 			controllerName := fmt.Sprintf("%sStaticResources", namePrefix)
 			staticResourceControllers[controllerName] = staticresourcecontroller.NewStaticResourceController(
 				controllerName,
-				func(name string) ([]byte, error) { return fs.ReadFile(b.Assets, name) },
+				func(name string) ([]byte, error) { return os.ReadFile(filepath.Join(b.Assets, name)) },
 				staticResourceFiles,
 				b.Clients.ClientHolder(),
 				b.Clients.OperatorClient,
@@ -185,14 +186,6 @@ func replaceVerbosityHook(placeholder string) deploymentcontroller.ManifestHookF
 	return func(spec *operatorv1.OperatorSpec, deployment []byte) ([]byte, error) {
 		desiredVerbosity := loglevel.LogLevelToVerbosity(spec.LogLevel)
 		replacer := strings.NewReplacer(placeholder, strconv.Itoa(desiredVerbosity))
-		newDeployment := replacer.Replace(string(deployment))
-		return []byte(newDeployment), nil
-	}
-}
-
-func replaceImageHook(placeholder string, desiredImageEnvVar string) deploymentcontroller.ManifestHookFunc {
-	return func(_ *operatorv1.OperatorSpec, deployment []byte) ([]byte, error) {
-		replacer := strings.NewReplacer(placeholder, os.Getenv(desiredImageEnvVar))
 		newDeployment := replacer.Replace(string(deployment))
 		return []byte(newDeployment), nil
 	}
@@ -254,34 +247,4 @@ func UpdateDeploymentProxyHook(pc clients.ProxyClientInterface) deploymentcontro
 
 		return nil
 	}
-}
-
-// The return behavior:
-// 1. If the input arg value matches the container argument = success
-// 2. If the input arg value does not match the container argument = error
-// 3. The ignoreMismatch argument ignores mismatches in want vs have arguments
-func setContainerFeatureGateArg(con *corev1.Container, value string, ignoreMismatch bool) error {
-	// Need to remove any existing `--feature-gates` arguments first
-	// This could happen because the experimental manifest may have feature-gates already enabled
-	const arg = "--feature-gates="
-	foundValues := sets.New[string]()
-
-	con.Args = slices.DeleteFunc(con.Args, func(s string) bool {
-		values, found := strings.CutPrefix(s, arg)
-		if found {
-			foundValues.Insert(strings.Split(values, ",")...)
-		}
-		return found
-	})
-
-	haveValues := strings.Join(slices.Sorted(slices.Values(foundValues.UnsortedList())), ",")
-	wantValues := strings.Join(slices.Sorted(slices.Values(strings.Split(value, ","))), ",")
-	if !ignoreMismatch && haveValues != wantValues {
-		return fmt.Errorf("argument %q has conflicting values: existing=%q, new=%q", arg, haveValues, wantValues)
-	}
-
-	if value != "" {
-		con.Args = append(con.Args, arg+value)
-	}
-	return nil
 }
