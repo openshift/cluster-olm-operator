@@ -96,6 +96,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	if err != nil {
 		return fmt.Errorf("unable to retrieve featureSet: %w", err)
 	}
+	log.Info("Retrieved FeatureGates", "fg", *fg)
 
 	clusterCatalogGvk := catalogdv1.GroupVersion.WithKind("ClusterCatalog")
 	cb := controller.Builder{
@@ -116,6 +117,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	if err != nil {
 		return err
 	}
+	log.Info("BuildControllers success")
 
 	namespaces := sets.New[string]()
 	for _, obj := range relatedObjects {
@@ -149,6 +151,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	if err != nil {
 		return err
 	}
+	log.Info("Retreived versions", "operatorImageVersion", operatorImageVersion, "currentOCPMinorVersion", currentOCPMinorVersion)
 
 	upgradeableConditionController := controller.NewStaticUpgradeableConditionController(
 		"OLMStaticUpgradeableConditionController",
@@ -156,6 +159,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		cc.EventRecorder.ForComponent("OLMStaticUpgradeableConditionController"),
 		controllerNames,
 	)
+	log.Info("NewStaticUpgradeableConditionController created")
 
 	incompatibleOperatorController := controller.NewIncompatibleOperatorController(
 		"OLMIncompatibleOperatorController",
@@ -165,12 +169,14 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		cl.OperatorClient,
 		cc.EventRecorder.ForComponent("OLMIncompatibleOperatorController"),
 	)
+	log.Info("NewIncompatibleOperatorConroller created")
 
 	// Update the environment if proxy information is available
 	err = controller.UpdateProxyEnvironment(klog.FromContext(ctx).WithName("main"), cl.ProxyClient)
 	if err != nil {
 		return err
 	}
+	log.Info("UpdateProxyEnvironment success")
 
 	proxyController := controller.NewProxyController(
 		olmProxyController,
@@ -178,6 +184,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		cl.OperatorClient,
 		cc.EventRecorder.ForComponent(olmProxyController),
 	)
+	log.Info("NewProxyController created")
 
 	versionGetter := status.NewVersionGetter()
 	versionGetter.SetVersion("operator", status.VersionForOperatorFromEnv())
@@ -200,10 +207,13 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		cc.EventRecorder.ForComponent("olm"),
 		cc.Clock,
 	)
+	log.Info("NewCluserOperatorStatusController created")
 
 	operatorLoggingController := loglevel.NewClusterOperatorLoggingController(cl.OperatorClient, cc.EventRecorder.ForComponent("ClusterOLMOperatorLoggingController"))
+	log.Info("NewClusterOperatorLoggingController created")
 
 	cl.StartInformers(ctx)
+	log.Info("StartInformers")
 
 	select {
 	case <-cl.FeatureGatesAccessor.InitialFeatureGatesObserved():
@@ -213,6 +223,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		log.Error(nil, "timed out waiting for FeatureGate detection")
 		return errors.New("timed out waiting for FeatureGate detection")
 	}
+	log.Info("InitialFeatureGatesObserved")
 
 	for _, c := range append(staticResourceControllerList, upgradeableConditionController, incompatibleOperatorController, clusterOperatorController, operatorLoggingController, proxyController) {
 		go func(c factory.Controller) {
@@ -221,8 +232,11 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		}(c)
 	}
 
+	log.Info("Sleeping for 10")
 	time.Sleep(10 * time.Second)
+	log.Info("Done sleeping")
 
+	log.Info("Run deploymentControllers")
 	for _, c := range deploymentControllerList {
 		go func(c factory.Controller) {
 			defer runtime.HandleCrash()
@@ -230,6 +244,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		}(c)
 	}
 
+	log.Info("Run clusterCatalogControllers")
 	for _, c := range clusterCatalogControllerList {
 		go func(c factory.Controller) {
 			defer runtime.HandleCrash()
@@ -237,6 +252,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		}(c)
 	}
 
+	log.Info("Waiting on context Done()")
 	<-ctx.Done()
 	return nil
 }

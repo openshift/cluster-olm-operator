@@ -54,40 +54,54 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 		errs                      []error
 	)
 
+	log := klog.FromContext(context.Background()).WithName("builder")
+
 	titler := cases.Title(language.English)
 
 	for _, subDirectory := range subDirectories {
 		var staticResourceFiles []string
+
+		log.Info("iterating over subdirectories", "subdir", subDirectory)
+
 		namePrefix := strings.ReplaceAll(titler.String(subDirectory), "-", "")
 
 		err := b.renderHelmTemplate(subDirectory)
 		if err != nil {
+			log.Error(err, "Failed to renderHelmTemplate", "subdir", subDirectory)
 			return nil, nil, nil, nil, err
 		}
+		log.Info("renderHelmTemplate completed", "subdir", subDirectory)
 
 		if err := filepath.WalkDir(filepath.Join(b.Assets, subDirectory), func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
+				log.Error(err, "Error walking subdirectory", "subdir", subDirectory, "path", path)
 				return err
 			}
+			log.Info("Walking subdirectory", "subdir", subDirectory, "path", path)
 
 			if d.IsDir() {
+				log.Info("Skipping directory", "subdir", subDirectory, "path", path)
 				return nil
 			}
 			if filepath.Ext(path) != ".yaml" && filepath.Ext(path) != ".yml" {
+				log.Info("Skipping non-YAML file", "subdir", subDirectory, "path", path)
 				return nil
 			}
 
+			log.Info("Reading file", "subdir", subDirectory, "path", path)
 			manifestData, err := os.ReadFile(filepath.Join(b.Assets, path))
 			if err != nil {
 				errs = append(errs, fmt.Errorf("error reading assets file %q: %w", path, err))
 				return nil
 			}
+			log.Info("ReadFile succeeded", "subdir", subDirectory, "path", path)
 
 			var manifest unstructured.Unstructured
 			if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(manifestData), 4096).Decode(&manifest); err != nil {
 				errs = append(errs, fmt.Errorf("error parsing manifest for file %q: %w", path, err))
 				return nil
 			}
+			log.Info("NewYAMLOrJSONDecoder succeeded", "subdir", subDirectory, "path", path)
 
 			manifestGVK := manifest.GroupVersionKind()
 			// check our known mappings first. If there isn't one, fallback to discovery
@@ -107,6 +121,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 			})
 
 			if manifestGVK.Kind == "Deployment" && manifestGVK.Group == "apps" {
+				log.Info("Creating controller for Deployment", "subdir", subDirectory, "path", path)
 				controllerName := controllerNameForObject(namePrefix, &manifest)
 				deploymentControllers[controllerName] = deploymentcontroller.NewDeploymentController(
 					controllerName,
@@ -127,6 +142,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 			}
 
 			if manifestGVK.Kind == "ClusterCatalog" && manifestGVK.Group == catalogdv1.GroupVersion.Group {
+				log.Info("Creating controller for ClusterCatalog", "subdir", subDirectory, "path", path)
 				controllerName := controllerNameForObject(namePrefix, &manifest)
 				clusterCatalogControllers[controllerName] = NewDynamicRequiredManifestController(
 					controllerName,
@@ -144,6 +160,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 				return nil
 			}
 
+			log.Info("Adding to static resources", "subdir", subDirectory, "path", path)
 			staticResourceFiles = append(staticResourceFiles, path)
 			return nil
 		}); err != nil {
@@ -151,6 +168,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 		}
 
 		if len(staticResourceFiles) > 0 {
+			log.Info("Creating controller for static resources")
 			controllerName := fmt.Sprintf("%sStaticResources", namePrefix)
 			staticResourceControllers[controllerName] = staticresourcecontroller.NewStaticResourceController(
 				controllerName,
