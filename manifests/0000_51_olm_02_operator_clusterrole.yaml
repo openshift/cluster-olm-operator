@@ -40,6 +40,8 @@ rules:
       - list
       - watch
       - create
+      - update
+      - patch
   - apiGroups:
       - ""
     resources:
@@ -53,20 +55,25 @@ rules:
     resources:
       - clusteroperators
     verbs:
-      - create
-      - get
       - list
       - watch
   - apiGroups:
       - config.openshift.io
     resources:
       - clusteroperators
+    resourceNames:
+      - olm
+    verbs:
+      - get
+  - apiGroups:
+      - config.openshift.io
+    resources:
       - clusteroperators/status
     resourceNames:
       - olm
     verbs:
       - update
-      - delete
+      - patch
   - apiGroups:
       - coordination.k8s.io
     resources:
@@ -98,6 +105,8 @@ rules:
       - get
       - list
       - watch
+      - update
+      - patch
   - apiGroups:
       - ""
     resources:
@@ -217,6 +226,7 @@ rules:
     - core-admin
     - helm-provisioner-admin
     - rukpak-webhooks-admin
+    - cluster-admin
   - apiGroups:
     - admissionregistration.k8s.io
     resources:
@@ -264,6 +274,7 @@ rules:
     - watch
     - create
     - patch
+    - update
   - apiGroups:
     - ""
     resources:
