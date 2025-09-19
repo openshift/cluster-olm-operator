@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	goflag "flag"
 	"fmt"
 	"os"
@@ -92,6 +91,11 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	}
 
 	log := klog.FromContext(ctx)
+	err = cl.StartFeatureGateInformer(ctx)
+	if err != nil {
+		return err
+	}
+	log.Info("StartFeatureGateInformer")
 	fg, err := cl.ConfigClient.ConfigV1().FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("unable to retrieve featureSet: %w", err)
@@ -214,16 +218,6 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 
 	cl.StartInformers(ctx)
 	log.Info("StartInformers")
-
-	select {
-	case <-cl.FeatureGatesAccessor.InitialFeatureGatesObserved():
-		featureGates, _ := cl.FeatureGatesAccessor.CurrentFeatureGates()
-		log.Info("FeatureGates initialized", "knownFeatures", featureGates.KnownFeatures())
-	case <-time.After(1 * time.Minute):
-		log.Error(nil, "timed out waiting for FeatureGate detection")
-		return errors.New("timed out waiting for FeatureGate detection")
-	}
-	log.Info("InitialFeatureGatesObserved")
 
 	for _, c := range append(staticResourceControllerList, upgradeableConditionController, incompatibleOperatorController, clusterOperatorController, operatorLoggingController, proxyController) {
 		go func(c factory.Controller) {
