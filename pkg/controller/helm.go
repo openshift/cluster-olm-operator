@@ -29,12 +29,15 @@ import (
 // ${assets}/helm/${subDir}/experimental.yaml = experimental values file
 // ${assets}/${subDir}/ = output directory
 func (b *Builder) renderHelmTemplate(subDir string) error {
+	log := klog.FromContext(context.Background()).WithName("renderHelmTemplate")
+
 	helmPath := filepath.Join(b.Assets, "helm", subDir)
 
 	useExperimental := useExperimentalFeatureSet(b.FeatureSet)
 	// What featureGates are enabled?
 	clusterGatesConfig, err := b.Clients.FeatureGatesAccessor.CurrentFeatureGates()
 	if err != nil {
+		log.Error(err, "CurrentFeatureGates failed")
 		return err
 	}
 	catalogdFeatures := upstreamFeatureGates(clusterGatesConfig,
@@ -54,6 +57,7 @@ func (b *Builder) renderHelmTemplate(subDir string) error {
 	}
 	values, err := gatherHelmValues(valuesFiles)
 	if err != nil {
+		log.Error(err, "gatherHelmValues failed")
 		return err
 	}
 
@@ -73,6 +77,7 @@ func (b *Builder) renderHelmTemplate(subDir string) error {
 	for _, v := range newvalues {
 		values, err = setHelmValue(values, v.location, v.value)
 		if err != nil {
+			log.Error(err, "setHelmValues failed")
 			return err
 		}
 	}
@@ -80,6 +85,7 @@ func (b *Builder) renderHelmTemplate(subDir string) error {
 	// Load the helm chart
 	chart, err := loader.Load(filepath.Join(helmPath, "olmv1"))
 	if err != nil {
+		log.Error(err, "helm chart Load failed")
 		return err
 	}
 
@@ -93,6 +99,7 @@ func (b *Builder) renderHelmTemplate(subDir string) error {
 	// Render the chart into memory
 	rel, err := client.Run(chart, values)
 	if err != nil {
+		log.Error(err, "render Run failed")
 		return err
 	}
 
@@ -100,6 +107,7 @@ func (b *Builder) renderHelmTemplate(subDir string) error {
 	manifestDir := filepath.Join(b.Assets, subDir)
 	_ = os.RemoveAll(manifestDir)
 	if err := os.MkdirAll(manifestDir, 0o755); err != nil {
+		log.Error(err, "MkDirAll failed")
 		return err
 	}
 
@@ -112,6 +120,7 @@ func (b *Builder) renderHelmTemplate(subDir string) error {
 			break
 		}
 		if err != nil {
+			log.Error(err, "yaml Decode failed")
 			return err
 		}
 
@@ -124,9 +133,11 @@ func (b *Builder) renderHelmTemplate(subDir string) error {
 		fileName = filepath.Join(manifestDir, fileName)
 		data, err := yaml3.Marshal(us)
 		if err != nil {
+			log.Error(err, "yaml Marshal failed")
 			return err
 		}
 		if err := os.WriteFile(fileName, data, 0o600); err != nil {
+			log.Error(err, "WriteFile failed")
 			return err
 		}
 	}
