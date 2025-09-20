@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	goflag "flag"
 	"fmt"
 	"os"
@@ -38,10 +37,8 @@ import (
 )
 
 const (
-	olmProxyController    = "OLMProxyController"
-	assetPath             = "/operand-assets"
-	standardAssetPath     = "/operand-assets/standard"
-	experimentalAssetPath = "/operand-assets/experimental"
+	olmProxyController = "OLMProxyController"
+	assetPath          = "/operand-assets"
 )
 
 func main() {
@@ -93,45 +90,21 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		return err
 	}
 
-	var featureSet configv1.FeatureSet
-
 	log := klog.FromContext(ctx)
-	assets := assetPath
-	if _, err := os.Stat(standardAssetPath); err == nil {
-		log.Info("Standard manifest location available")
-		assets = standardAssetPath
+	err = cl.StartFeatureGateInformer(ctx)
+	if err != nil {
+		return err
 	}
-	if _, err := os.Stat(experimentalAssetPath); err == nil {
-		// experimental Path exists
-		log.Info("Experimental manifest location available")
-		fg, err := cl.ConfigClient.ConfigV1().FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
-		if err != nil {
-			return fmt.Errorf("unable to retrieve featureSet: %w", err)
-		}
-
-		featureSet = fg.Spec.FeatureSet
-		useExperimental := false
-		switch featureSet {
-		case configv1.CustomNoUpgrade:
-			useExperimental = true
-		case configv1.DevPreviewNoUpgrade:
-			useExperimental = true
-		case configv1.TechPreviewNoUpgrade:
-			useExperimental = true
-		case configv1.Default:
-		default:
-			log.Info("Unknown featureSet value, using standard manifests", "featureSet", fg.Spec.FeatureSet)
-		}
-
-		if useExperimental {
-			log.Info("Using experimental manifests", "featureSet", fg.Spec.FeatureSet)
-			assets = experimentalAssetPath
-		}
+	log.Info("StartFeatureGateInformer")
+	fg, err := cl.ConfigClient.ConfigV1().FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("unable to retrieve featureSet: %w", err)
 	}
+	log.Info("Retrieved FeatureGates", "fg", *fg)
 
 	clusterCatalogGvk := catalogdv1.GroupVersion.WithKind("ClusterCatalog")
 	cb := controller.Builder{
-		Assets:            os.DirFS(assets),
+		Assets:            assetPath,
 		Clients:           cl,
 		ControllerContext: cc,
 		KnownRESTMappings: map[schema.GroupVersionKind]*meta.RESTMapping{
@@ -141,13 +114,14 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 				Scope:            meta.RESTScopeRoot,
 			},
 		},
-		FeatureSet: featureSet,
+		FeatureSet: fg.Spec.FeatureSet,
 	}
 
 	staticResourceControllers, deploymentControllers, clusterCatalogControllers, relatedObjects, err := cb.BuildControllers("catalogd", "operator-controller")
 	if err != nil {
 		return err
 	}
+	log.Info("BuildControllers success")
 
 	namespaces := sets.New[string]()
 	for _, obj := range relatedObjects {
@@ -181,6 +155,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	if err != nil {
 		return err
 	}
+	log.Info("Retreived versions", "operatorImageVersion", operatorImageVersion, "currentOCPMinorVersion", currentOCPMinorVersion)
 
 	upgradeableConditionController := controller.NewStaticUpgradeableConditionController(
 		"OLMStaticUpgradeableConditionController",
@@ -188,6 +163,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		cc.EventRecorder.ForComponent("OLMStaticUpgradeableConditionController"),
 		controllerNames,
 	)
+	log.Info("NewStaticUpgradeableConditionController created")
 
 	incompatibleOperatorController := controller.NewIncompatibleOperatorController(
 		"OLMIncompatibleOperatorController",
@@ -197,12 +173,14 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		cl.OperatorClient,
 		cc.EventRecorder.ForComponent("OLMIncompatibleOperatorController"),
 	)
+	log.Info("NewIncompatibleOperatorConroller created")
 
 	// Update the environment if proxy information is available
 	err = controller.UpdateProxyEnvironment(klog.FromContext(ctx).WithName("main"), cl.ProxyClient)
 	if err != nil {
 		return err
 	}
+	log.Info("UpdateProxyEnvironment success")
 
 	proxyController := controller.NewProxyController(
 		olmProxyController,
@@ -210,6 +188,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		cl.OperatorClient,
 		cc.EventRecorder.ForComponent(olmProxyController),
 	)
+	log.Info("NewProxyController created")
 
 	versionGetter := status.NewVersionGetter()
 	versionGetter.SetVersion("operator", status.VersionForOperatorFromEnv())
@@ -232,19 +211,13 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		cc.EventRecorder.ForComponent("olm"),
 		cc.Clock,
 	)
+	log.Info("NewCluserOperatorStatusController created")
 
 	operatorLoggingController := loglevel.NewClusterOperatorLoggingController(cl.OperatorClient, cc.EventRecorder.ForComponent("ClusterOLMOperatorLoggingController"))
+	log.Info("NewClusterOperatorLoggingController created")
 
 	cl.StartInformers(ctx)
-
-	select {
-	case <-cl.FeatureGatesAccessor.InitialFeatureGatesObserved():
-		featureGates, _ := cl.FeatureGatesAccessor.CurrentFeatureGates()
-		log.Info("FeatureGates initialized", "knownFeatures", featureGates.KnownFeatures())
-	case <-time.After(1 * time.Minute):
-		log.Error(nil, "timed out waiting for FeatureGate detection")
-		return errors.New("timed out waiting for FeatureGate detection")
-	}
+	log.Info("StartInformers")
 
 	for _, c := range append(staticResourceControllerList, upgradeableConditionController, incompatibleOperatorController, clusterOperatorController, operatorLoggingController, proxyController) {
 		go func(c factory.Controller) {
@@ -253,8 +226,11 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		}(c)
 	}
 
+	log.Info("Sleeping for 10")
 	time.Sleep(10 * time.Second)
+	log.Info("Done sleeping")
 
+	log.Info("Run deploymentControllers")
 	for _, c := range deploymentControllerList {
 		go func(c factory.Controller) {
 			defer runtime.HandleCrash()
@@ -262,6 +238,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		}(c)
 	}
 
+	log.Info("Run clusterCatalogControllers")
 	for _, c := range clusterCatalogControllerList {
 		go func(c factory.Controller) {
 			defer runtime.HandleCrash()
@@ -269,6 +246,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		}(c)
 	}
 
+	log.Info("Waiting on context Done()")
 	<-ctx.Done()
 	return nil
 }

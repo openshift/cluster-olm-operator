@@ -3,6 +3,7 @@ package clients
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -134,8 +135,18 @@ func New(cc *controllercmd.ControllerContext) (*Clients, error) {
 	}, nil
 }
 
-func (c *Clients) StartInformers(ctx context.Context) {
+func (c *Clients) StartFeatureGateInformer(ctx context.Context) error {
 	go c.FeatureGatesAccessor.Run(ctx)
+	select {
+	case <-c.FeatureGatesAccessor.InitialFeatureGatesObserved():
+		return nil
+	case <-time.After(1 * time.Minute):
+		return errors.New("timed out waiting for FeatureGate detection")
+	}
+}
+
+func (c *Clients) StartInformers(ctx context.Context) {
+	/* FeatureGateAccessor starts separately */
 	c.KubeInformerFactory.Start(ctx.Done())
 	c.ConfigInformerFactory.Start(ctx.Done())
 	c.OperatorInformers.Start(ctx.Done())
@@ -183,10 +194,6 @@ func setupFeatureGatesAccessor(
 		configInformerFactory.Config().V1().ClusterVersions(), configInformerFactory.Config().V1().FeatureGates(),
 		eventRecorder,
 	)
-	// modify the default behavior of calling exit(0) to noop whenever a FeatureGates set changes in cluster
-	// reconsider this change if there ever comes a feature flag that affects the cluster-olm-operator directly
-	// see: https://github.com/openshift/cluster-olm-operator/pull/102#discussion_r1926861888
-	featureGateAccessor.SetChangeHandler(func(_ featuregates.FeatureChange) {})
 
 	return featureGateAccessor
 }
