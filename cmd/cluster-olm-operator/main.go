@@ -96,6 +96,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	var featureSet configv1.FeatureSet
 
 	log := klog.FromContext(ctx)
+	log.Info("Starting runOperator... here We GO!")
 	assets := assetPath
 	if _, err := os.Stat(standardAssetPath); err == nil {
 		log.Info("Standard manifest location available")
