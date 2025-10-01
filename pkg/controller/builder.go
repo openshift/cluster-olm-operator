@@ -16,6 +16,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/controller/factory"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/library-go/pkg/operator/deploymentcontroller"
 	"github.com/openshift/library-go/pkg/operator/staticresourcecontroller"
 	"golang.org/x/text/cases"
@@ -29,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/klog/v2"
 
@@ -40,11 +40,11 @@ import (
 )
 
 type Builder struct {
-	Assets            fs.FS
+	Assets            string
 	Clients           *clients.Clients
 	ControllerContext *controllercmd.ControllerContext
 	KnownRESTMappings map[schema.GroupVersionKind]*meta.RESTMapping
-	FeatureSet        configv1.FeatureSet
+	FeatureGate       configv1.FeatureGate
 }
 
 func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory.Controller, map[string]factory.Controller, map[string]factory.Controller, []configv1.ObjectReference, error) {
@@ -55,12 +55,24 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 		relatedObjects            []configv1.ObjectReference
 		errs                      []error
 	)
+	log := klog.FromContext(context.Background()).WithName("BuildControllers")
 
 	titler := cases.Title(language.English)
+
 	for _, subDirectory := range subDirectories {
 		var staticResourceFiles []string
+
 		namePrefix := strings.ReplaceAll(titler.String(subDirectory), "-", "")
-		if err := fs.WalkDir(b.Assets, subDirectory, func(path string, d fs.DirEntry, err error) error {
+
+		sourceDir := filepath.Join(b.Assets, "helm", subDirectory)
+		manifestDir := filepath.Join(b.Assets, subDirectory)
+		if err := b.renderHelmTemplate(sourceDir, manifestDir); err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to render Helm template: %w", err)
+		}
+
+		log.Info("Iterating through manifests", "directory", manifestDir)
+
+		if err := filepath.WalkDir(manifestDir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
@@ -72,7 +84,9 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 				return nil
 			}
 
-			manifestData, err := fs.ReadFile(b.Assets, path)
+			log.Info("Processing YAML", "file", path)
+
+			manifestData, err := os.ReadFile(path)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("error reading assets file %q: %w", path, err))
 				return nil
@@ -115,12 +129,8 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 					},
 					[]deploymentcontroller.ManifestHookFunc{
 						replaceVerbosityHook("${LOG_VERBOSITY}"),
-						replaceImageHook("${CATALOGD_IMAGE}", "CATALOGD_IMAGE"),
-						replaceImageHook("${OPERATOR_CONTROLLER_IMAGE}", "OPERATOR_CONTROLLER_IMAGE"),
-						replaceImageHook("${KUBE_RBAC_PROXY_IMAGE}", "KUBE_RBAC_PROXY_IMAGE"),
 					},
 					UpdateDeploymentProxyHook(b.Clients.ProxyClient),
-					UpdateDeploymentFeatureGatesHook(b.Clients.FeatureGatesAccessor, b.Clients.FeatureGateMapper, b.FeatureSet),
 				)
 				return nil
 			}
@@ -153,7 +163,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 			controllerName := fmt.Sprintf("%sStaticResources", namePrefix)
 			staticResourceControllers[controllerName] = staticresourcecontroller.NewStaticResourceController(
 				controllerName,
-				func(name string) ([]byte, error) { return fs.ReadFile(b.Assets, name) },
+				func(name string) ([]byte, error) { return os.ReadFile(name) },
 				staticResourceFiles,
 				b.Clients.ClientHolder(),
 				b.Clients.OperatorClient,
@@ -165,6 +175,66 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 		return nil, nil, nil, nil, fmt.Errorf("error building controllers: %w", errors.Join(errs...))
 	}
 	return staticResourceControllers, deploymentControllers, clusterCatalogControllers, relatedObjects, nil
+}
+
+func (b *Builder) UseExperimentalFeatureSet() bool {
+	switch b.FeatureGate.Spec.FeatureSet {
+	case configv1.CustomNoUpgrade:
+		return true
+	case configv1.DevPreviewNoUpgrade:
+		return true
+	case configv1.TechPreviewNoUpgrade:
+		return true
+	case configv1.Default:
+	default:
+		klog.FromContext(context.Background()).WithName("builder").Info("Unknown featureSet value, using standard manifests", "featureSet", b.FeatureGate.Spec.FeatureSet)
+	}
+	return false
+}
+
+func (b *Builder) CurrentFeatureGates() (featuregates.FeatureGate, error) {
+	enabledFeatures := make([]configv1.FeatureGateName, 10)
+	disabledFeatures := make([]configv1.FeatureGateName, 10)
+	for _, featureGateValues := range b.FeatureGate.Status.FeatureGates {
+		// We don't check featureGateValues.Version... but perhaps we should
+		for _, enabled := range featureGateValues.Enabled {
+			enabledFeatures = append(enabledFeatures, enabled.Name)
+		}
+		for _, disabled := range featureGateValues.Disabled {
+			disabledFeatures = append(disabledFeatures, disabled.Name)
+		}
+	}
+	// TODO: Replace this with featuregates.NewFeatureGate to use the real thing that panics
+	return NewFeatureGate(enabledFeatures, disabledFeatures), nil
+}
+
+// TODO: Remove the featureGate stuff to use the real thing
+type featureGate struct {
+	enabled  []configv1.FeatureGateName
+	disabled []configv1.FeatureGateName
+}
+
+// TODO: Remove the featureGate stuff to use the real thing
+func NewFeatureGate(enabled, disabled []configv1.FeatureGateName) featuregates.FeatureGate {
+	return &featureGate{
+		enabled:  enabled,
+		disabled: disabled,
+	}
+}
+
+// TODO: Remove the featureGate stuff to use the real thing
+func (f *featureGate) Enabled(key configv1.FeatureGateName) bool {
+	// Don't panic!
+	return slices.Contains(f.enabled, key)
+}
+
+// TODO: Remove the featureGate stuff to use the real thing
+func (f *featureGate) KnownFeatures() []configv1.FeatureGateName {
+	allKnown := make([]configv1.FeatureGateName, 0, len(f.enabled)+len(f.disabled))
+	allKnown = append(allKnown, f.enabled...)
+	allKnown = append(allKnown, f.disabled...)
+
+	return allKnown
 }
 
 type object interface {
@@ -185,14 +255,6 @@ func replaceVerbosityHook(placeholder string) deploymentcontroller.ManifestHookF
 	return func(spec *operatorv1.OperatorSpec, deployment []byte) ([]byte, error) {
 		desiredVerbosity := loglevel.LogLevelToVerbosity(spec.LogLevel)
 		replacer := strings.NewReplacer(placeholder, strconv.Itoa(desiredVerbosity))
-		newDeployment := replacer.Replace(string(deployment))
-		return []byte(newDeployment), nil
-	}
-}
-
-func replaceImageHook(placeholder string, desiredImageEnvVar string) deploymentcontroller.ManifestHookFunc {
-	return func(_ *operatorv1.OperatorSpec, deployment []byte) ([]byte, error) {
-		replacer := strings.NewReplacer(placeholder, os.Getenv(desiredImageEnvVar))
 		newDeployment := replacer.Replace(string(deployment))
 		return []byte(newDeployment), nil
 	}
@@ -223,7 +285,7 @@ func setContainerEnv(con *corev1.Container, envs []corev1.EnvVar) error {
 
 func UpdateDeploymentProxyHook(pc clients.ProxyClientInterface) deploymentcontroller.DeploymentHookFunc {
 	return func(_ *operatorv1.OperatorSpec, deployment *appsv1.Deployment) error {
-		klog.FromContext(context.Background()).WithName("builder").V(0).Info("ProxyHook updating environment", "deployment", deployment.Name)
+		klog.FromContext(context.Background()).WithName("builder").V(1).Info("ProxyHook updating environment", "deployment", deployment.Name)
 		proxyConfig, err := pc.Get("cluster")
 		if err != nil {
 			return fmt.Errorf("error getting proxies.config.openshift.io/cluster: %w", err)
@@ -254,34 +316,4 @@ func UpdateDeploymentProxyHook(pc clients.ProxyClientInterface) deploymentcontro
 
 		return nil
 	}
-}
-
-// The return behavior:
-// 1. If the input arg value matches the container argument = success
-// 2. If the input arg value does not match the container argument = error
-// 3. The ignoreMismatch argument ignores mismatches in want vs have arguments
-func setContainerFeatureGateArg(con *corev1.Container, value string, ignoreMismatch bool) error {
-	// Need to remove any existing `--feature-gates` arguments first
-	// This could happen because the experimental manifest may have feature-gates already enabled
-	const arg = "--feature-gates="
-	foundValues := sets.New[string]()
-
-	con.Args = slices.DeleteFunc(con.Args, func(s string) bool {
-		values, found := strings.CutPrefix(s, arg)
-		if found {
-			foundValues.Insert(strings.Split(values, ",")...)
-		}
-		return found
-	})
-
-	haveValues := strings.Join(slices.Sorted(slices.Values(foundValues.UnsortedList())), ",")
-	wantValues := strings.Join(slices.Sorted(slices.Values(strings.Split(value, ","))), ",")
-	if !ignoreMismatch && haveValues != wantValues {
-		return fmt.Errorf("argument %q has conflicting values: existing=%q, new=%q", arg, haveValues, wantValues)
-	}
-
-	if value != "" {
-		con.Args = append(con.Args, arg+value)
-	}
-	return nil
 }

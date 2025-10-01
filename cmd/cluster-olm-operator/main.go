@@ -38,15 +38,15 @@ import (
 )
 
 const (
-	olmProxyController    = "OLMProxyController"
-	assetPath             = "/operand-assets"
-	standardAssetPath     = "/operand-assets/standard"
-	experimentalAssetPath = "/operand-assets/experimental"
+	olmProxyController = "OLMProxyController"
+	assetPath          = "/operand-assets"
 )
 
 func main() {
 	pflag.CommandLine.SetNormalizeFunc(utilflag.WordSepNormalizeFunc)
 	pflag.CommandLine.AddGoFlagSet(goflag.CommandLine)
+
+	klog.InitFlags(goflag.CommandLine)
 
 	command := newRootCommand()
 	code := cli.Run(command)
@@ -93,45 +93,16 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		return err
 	}
 
-	var featureSet configv1.FeatureSet
-
 	log := klog.FromContext(ctx)
-	assets := assetPath
-	if _, err := os.Stat(standardAssetPath); err == nil {
-		log.Info("Standard manifest location available")
-		assets = standardAssetPath
-	}
-	if _, err := os.Stat(experimentalAssetPath); err == nil {
-		// experimental Path exists
-		log.Info("Experimental manifest location available")
-		fg, err := cl.ConfigClient.ConfigV1().FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
-		if err != nil {
-			return fmt.Errorf("unable to retrieve featureSet: %w", err)
-		}
 
-		featureSet = fg.Spec.FeatureSet
-		useExperimental := false
-		switch featureSet {
-		case configv1.CustomNoUpgrade:
-			useExperimental = true
-		case configv1.DevPreviewNoUpgrade:
-			useExperimental = true
-		case configv1.TechPreviewNoUpgrade:
-			useExperimental = true
-		case configv1.Default:
-		default:
-			log.Info("Unknown featureSet value, using standard manifests", "featureSet", fg.Spec.FeatureSet)
-		}
-
-		if useExperimental {
-			log.Info("Using experimental manifests", "featureSet", fg.Spec.FeatureSet)
-			assets = experimentalAssetPath
-		}
+	fg, err := cl.ConfigClient.ConfigV1().FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("unable to retrieve featureSet: %w", err)
 	}
 
 	clusterCatalogGvk := catalogdv1.GroupVersion.WithKind("ClusterCatalog")
 	cb := controller.Builder{
-		Assets:            os.DirFS(assets),
+		Assets:            assetPath,
 		Clients:           cl,
 		ControllerContext: cc,
 		KnownRESTMappings: map[schema.GroupVersionKind]*meta.RESTMapping{
@@ -141,7 +112,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 				Scope:            meta.RESTScopeRoot,
 			},
 		},
-		FeatureSet: featureSet,
+		FeatureGate: *fg,
 	}
 
 	staticResourceControllers, deploymentControllers, clusterCatalogControllers, relatedObjects, err := cb.BuildControllers("catalogd", "operator-controller")
@@ -242,7 +213,6 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		featureGates, _ := cl.FeatureGatesAccessor.CurrentFeatureGates()
 		log.Info("FeatureGates initialized", "knownFeatures", featureGates.KnownFeatures())
 	case <-time.After(1 * time.Minute):
-		log.Error(nil, "timed out waiting for FeatureGate detection")
 		return errors.New("timed out waiting for FeatureGate detection")
 	}
 
