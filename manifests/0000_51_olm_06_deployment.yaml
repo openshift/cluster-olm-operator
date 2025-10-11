@@ -32,7 +32,7 @@ spec:
           - /bin/sh
           args:
           - -c
-          - if [ -e /cp-manifests ]; then /cp-manifests /operand-assets; else cp -a /openshift/manifests /operand-assets/catalogd; fi
+          - /cp-manifests /operand-assets
           volumeMounts:
             - mountPath: /operand-assets
               name: operand-assets
@@ -46,7 +46,7 @@ spec:
           - /bin/sh
           args:
           - -c
-          - if [ -e /cp-manifests ]; then /cp-manifests /operand-assets; else cp -a /openshift/manifests /operand-assets/operator-controller; fi
+          - /cp-manifests /operand-assets
           volumeMounts:
           - mountPath: /operand-assets
             name: operand-assets
