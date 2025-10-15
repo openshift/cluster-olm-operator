@@ -3,15 +3,13 @@ package controller
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 
-	"github.com/TwiN/deepmerge"
+	"github.com/openshift/cluster-olm-operator/pkg/helmvalues"
 
 	yaml3 "gopkg.in/yaml.v3"
 
@@ -35,17 +33,22 @@ func (b *Builder) renderHelmTemplate(helmPath, manifestDir string) error {
 	if err != nil {
 		return fmt.Errorf("CurrentFeatureGates failed: %w", err)
 	}
-	catalogdFeatures := upstreamFeatureGates(clusterGatesConfig,
-		b.Clients.FeatureGateMapper.CatalogdDownstreamFeatureGates(),
-		b.Clients.FeatureGateMapper.CatalogdUpstreamForDownstream)
-	operatorControllerFeatures := upstreamFeatureGates(clusterGatesConfig,
-		b.Clients.FeatureGateMapper.OperatorControllerDownstreamFeatureGates(),
-		b.Clients.FeatureGateMapper.OperatorControllerUpstreamForDownstream)
-	if len(catalogdFeatures) > 0 || len(operatorControllerFeatures) > 0 {
+
+	featureGateValues, err := upstreamFeatureGates(clusterGatesConfig,
+		b.Clients.FeatureGateMapper.DownstreamFeatureGates(),
+		b.Clients.FeatureGateMapper.UpstreamForDownstream)
+	if err != nil {
+		return err
+	}
+	hasEnabledFeatureGates, err := featureGateValues.HasEnabledFeatureGates()
+	if err != nil {
+		return err
+	}
+	if hasEnabledFeatureGates {
 		useExperimental = true
 	}
 
-	// Determine and generate the values
+	// Determine and generate the values from the files (equivalent to --values)
 	valuesFiles := []string{filepath.Join(helmPath, "openshift.yaml")}
 	if useExperimental {
 		log.Info("Using experimental values")
@@ -53,31 +56,27 @@ func (b *Builder) renderHelmTemplate(helmPath, manifestDir string) error {
 	} else {
 		log.Info("Using standard values")
 	}
-	values, err := gatherHelmValues(valuesFiles)
+	values, err := helmvalues.NewHelmValuesFromFiles(valuesFiles)
 	if err != nil {
-		return fmt.Errorf("gatherHelmValues failed: %w", err)
+		return fmt.Errorf("error from GatherHelmValuesFromFiles: %w", err)
 	}
 
+	// Add the featureGateValues
+	if err := values.AddValues(featureGateValues); err != nil {
+		return fmt.Errorf("error from AddValues: %w", err)
+	}
 	// Log verbosity and proxies are dynamic, so they are not included here.
 	// Feature flags are listed here, and if they change cluster-olm-operator
 	// will resart, as the manifest needs to be regenerated
-	newvalues := []struct {
-		location string
-		value    any
-	}{
-		{"catalogdFeatures", catalogdFeatures},
-		{"operatorControllerFeatures", operatorControllerFeatures},
-		{"options.operatorController.deployment.image", os.Getenv("OPERATOR_CONTROLLER_IMAGE")},
-		{"options.catalogd.deployment.image", os.Getenv("CATALOGD_IMAGE")},
+	// Add more values (equivalent to --set)
+	if err := values.SetStringValue("options.catalogd.deployment.image", os.Getenv("CATALOGD_IMAGE")); err != nil {
+		return fmt.Errorf("error setting CATALOGD_IMAGE: %w", err)
+	}
+	if err := values.SetStringValue("options.operatorController.deployment.image", os.Getenv("OPERATOR_CONTROLLER_IMAGE")); err != nil {
+		return fmt.Errorf("error setting OPERATOR_CONTROLLER_IMAGE: %w", err)
 	}
 
-	for _, v := range newvalues {
-		values, err = setHelmValue(values, v.location, v.value)
-		if err != nil {
-			return fmt.Errorf("error setting Helm values %q=%q: %w", v.location, v.value, err)
-		}
-	}
-	log.Info("Calculated values", "values", values)
+	log.Info("Calculated values", "values", values.GetValues())
 
 	// Load the helm chart
 	chart, err := loader.Load(filepath.Join(helmPath, "olmv1"))
@@ -93,7 +92,7 @@ func (b *Builder) renderHelmTemplate(helmPath, manifestDir string) error {
 	client.DisableHooks = true
 
 	// Render the chart into memory
-	rel, err := client.Run(chart, values)
+	rel, err := client.Run(chart, values.GetValues())
 	if err != nil {
 		return fmt.Errorf("render Run failed: %w", err)
 	}
@@ -171,46 +170,6 @@ func (b *Builder) renderHelmTemplate(helmPath, manifestDir string) error {
 
 	log.Info("Successfully split manifest", "count", validDocs, "directory", manifestDir)
 	return nil
-}
-
-func gatherHelmValues(files []string) (map[string]any, error) {
-	values := make(map[string]any)
-	for _, a := range files {
-		newvalues := make(map[string]any)
-		data, err := os.ReadFile(a)
-		if err != nil {
-			return nil, err
-		}
-		if err := yaml3.Unmarshal(data, newvalues); err != nil {
-			return nil, err
-		}
-		if err := deepmerge.DeepMerge(values, newvalues, deepmerge.Config{}); err != nil {
-			return nil, err
-		}
-	}
-	return values, nil
-}
-
-func setHelmValue(values map[string]any, location string, value any) (map[string]any, error) {
-	ss := strings.Split(location, ".")
-	if len(ss) < 1 {
-		return nil, errors.New("location string has no locations")
-	}
-
-	// Build a tree in reverse
-	slices.Reverse(ss)
-	v := make(map[string]any)
-	v[ss[0]] = value
-	for _, s := range ss[1:] {
-		newmap := make(map[string]any)
-		newmap[s] = v
-		v = newmap
-	}
-
-	if err := deepmerge.DeepMerge(values, v, deepmerge.Config{}); err != nil {
-		return nil, err
-	}
-	return values, nil
 }
 
 // YAML Splitting Code
