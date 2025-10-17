@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -126,11 +128,13 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 					b.Clients.KubeInformerFactory.Apps().V1().Deployments(),
 					[]factory.Informer{
 						b.Clients.ProxyClient.Informer(),
+						b.Clients.APIServerClient.Informer(),
 					},
 					[]deploymentcontroller.ManifestHookFunc{
 						replaceVerbosityHook("${LOG_VERBOSITY}"),
 					},
 					UpdateDeploymentProxyHook(b.Clients.ProxyClient),
+					UpdateDeploymentTLSProfileHook(),
 				)
 				return nil
 			}
@@ -312,6 +316,81 @@ func UpdateDeploymentProxyHook(pc clients.ProxyClientInterface) deploymentcontro
 		}
 		if len(errs) > 0 {
 			return errors.Join(errs...)
+		}
+
+		return nil
+	}
+}
+
+var (
+	tlsConfig           map[string]interface{}
+	tlsConfigMutex      = sync.Mutex{}
+	TLSMinVersionPath   = []string{"tls-min-version"}
+	TLSCipherSuitesPath = []string{"tls-cipher-suites"}
+	TLSProfileTypePath  = []string{"tls-profile-type"}
+)
+
+func UpdateTLSProfileCallback(config map[string]interface{}) {
+	// This is a shallow map, so Clone will work
+	tlsConfigMutex.Lock()
+	defer tlsConfigMutex.Unlock()
+	tlsConfig = maps.Clone(config)
+}
+
+func getTLSConfig() ([]string, error) {
+	var tlsVersionMap = map[string]string{
+		"VersionTLS10": "TLSv1.0",
+		"VersionTLS11": "TLSv1.1",
+		"VersionTLS12": "TLSv1.2",
+		"VersionTLS13": "TLSv1.3",
+	}
+	args := []string{}
+
+	tlsConfigMutex.Lock()
+	defer tlsConfigMutex.Unlock()
+
+	tlsProfileType, found, err := unstructured.NestedString(tlsConfig, TLSProfileTypePath...)
+	if err != nil {
+		return nil, fmt.Errorf("unable to find %v: %w", TLSProfileTypePath, err)
+	}
+	if found && tlsProfileType != "" {
+		args = append(args, fmt.Sprintf("--tls-profile=%s", strings.ToLower(tlsProfileType)))
+	}
+
+	if tlsProfileType != string(configv1.TLSProfileCustomType) {
+		return args, nil
+	}
+	tlsVersion, found, err := unstructured.NestedString(tlsConfig, TLSMinVersionPath...)
+	if err != nil {
+		return nil, fmt.Errorf("unable to find %v: %w", TLSMinVersionPath, err)
+	}
+	if found {
+		if verArg, ok := tlsVersionMap[tlsVersion]; ok {
+			args = append(args, fmt.Sprintf("--tls-custom-version=%s", verArg))
+		}
+	}
+
+	tlsCipherSuites, found, err := unstructured.NestedStringSlice(tlsConfig, TLSCipherSuitesPath...)
+	if err != nil {
+		return nil, fmt.Errorf("unable to find %v: %w", TLSCipherSuitesPath, err)
+	}
+	if found {
+		args = append(args, fmt.Sprintf("--tls-custom-ciphers=%s", strings.Join(tlsCipherSuites, ",")))
+	}
+	return args, nil
+}
+
+func UpdateDeploymentTLSProfileHook() deploymentcontroller.DeploymentHookFunc {
+	return func(_ *operatorv1.OperatorSpec, deployment *appsv1.Deployment) error {
+		args, err := getTLSConfig()
+		if err != nil {
+			return err
+		}
+
+		klog.FromContext(context.Background()).WithName("builder").V(1).Info("TLSProfileHook updating arguments", "deployment", deployment.Name, "arguments", args)
+
+		for i := range deployment.Spec.Template.Spec.Containers {
+			deployment.Spec.Template.Spec.Containers[i].Args = append(deployment.Spec.Template.Spec.Containers[i].Args, args...)
 		}
 
 		return nil

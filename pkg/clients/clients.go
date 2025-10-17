@@ -69,6 +69,7 @@ type Clients struct {
 	KubeInformersForNamespaces v1helpers.KubeInformersForNamespaces
 	FeatureGatesAccessor       featuregates.FeatureGateAccess
 	FeatureGateMapper          internalfeatures.MapperInterface
+	APIServerClient            configinformerv1.APIServerInformer
 }
 
 func New(cc *controllercmd.ControllerContext) (*Clients, error) {
@@ -131,6 +132,7 @@ func New(cc *controllercmd.ControllerContext) (*Clients, error) {
 		ConfigInformerFactory:  configInformerFactory,
 		FeatureGatesAccessor:   setupFeatureGatesAccessor(kubeClient, configInformerFactory, cc.OperatorNamespace),
 		FeatureGateMapper:      internalfeatures.NewMapper(),
+		APIServerClient:        configInformerFactory.Config().V1().APIServers(),
 	}, nil
 }
 

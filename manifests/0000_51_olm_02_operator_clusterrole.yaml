@@ -54,6 +54,7 @@ rules:
       - config.openshift.io
     resources:
       - clusteroperators
+      - apiservers
     verbs:
       - list
       - watch
@@ -74,6 +75,14 @@ rules:
     verbs:
       - update
       - patch
+  - apiGroups:
+      - config.openshift.io
+    resources:
+      - apiservers
+    resourceNames:
+      - cluster
+    verbs:
+      - get
   - apiGroups:
       - coordination.k8s.io
     resources:

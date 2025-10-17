@@ -14,6 +14,7 @@ import (
 	_ "github.com/openshift/api/operator/v1/zz_generated.crd-manifests"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/controller/factory"
+	"github.com/openshift/library-go/pkg/operator/apiserver/controller/tlssecurityprofile"
 	"github.com/openshift/library-go/pkg/operator/loglevel"
 	"github.com/openshift/library-go/pkg/operator/status"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
@@ -182,6 +183,15 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		cc.EventRecorder.ForComponent(olmProxyController),
 	)
 
+	tlsProfileController := tlssecurityprofile.NewTLSSecurityProfileControllerWithPaths(
+		"OLM",
+		controller.UpdateTLSProfileCallback,
+		cl.OperatorClient,
+		cl.ConfigInformerFactory,
+		cc.EventRecorder.ForComponent("OLM"),
+		controller.TLSMinVersionPath, controller.TLSCipherSuitesPath, controller.TLSProfileTypePath,
+	)
+
 	versionGetter := status.NewVersionGetter()
 	versionGetter.SetVersion("operator", status.VersionForOperatorFromEnv())
 
@@ -216,7 +226,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		return errors.New("timed out waiting for FeatureGate detection")
 	}
 
-	for _, c := range append(staticResourceControllerList, upgradeableConditionController, incompatibleOperatorController, clusterOperatorController, operatorLoggingController, proxyController) {
+	for _, c := range append(staticResourceControllerList, upgradeableConditionController, incompatibleOperatorController, clusterOperatorController, operatorLoggingController, proxyController, tlsProfileController) {
 		go func(c factory.Controller) {
 			defer runtime.HandleCrash()
 			c.Run(ctx, 1)
