@@ -2,11 +2,12 @@ package featuregates
 
 import (
 	"errors"
-	"sort"
 	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/features"
+
+	"github.com/openshift/cluster-olm-operator/pkg/helmvalues"
 )
 
 // Add your new upstream feature gate here
@@ -19,36 +20,60 @@ const (
 	// SingleOwnNamespaceInstallSupport: Enables support for Single- and OwnNamespace install modes.
 	SingleOwnNamespaceInstallSupport = "SingleOwnNamespaceInstallSupport"
 	// WebhookProviderOpenshiftServiceCA: Enables support for the installation of bundles containing webhooks using the openshift-serviceca tls certificate provider
+	// WebhookProviderCertManager: This is something that always needs to be disabled downstream
 	WebhookProviderOpenshiftServiceCA = "WebhookProviderOpenshiftServiceCA"
+	WebhookProviderCertManager        = "WebhookProviderCertManager"
 )
 
 type MapperInterface interface {
-	OperatorControllerUpstreamForDownstream(downstreamGate configv1.FeatureGateName) []string
-	OperatorControllerDownstreamFeatureGates() []configv1.FeatureGateName
-	CatalogdUpstreamForDownstream(downstreamGate configv1.FeatureGateName) []string
-	CatalogdDownstreamFeatureGates() []configv1.FeatureGateName
+	UpstreamForDownstream(downstreamGate configv1.FeatureGateName) func(*helmvalues.HelmValues, bool) error
+	DownstreamFeatureGates() []configv1.FeatureGateName
 }
 
 // Mapper knows the mapping between downstream and upstream feature gates for both OLM components
+
+type gateMapFunc map[configv1.FeatureGateName]func(*helmvalues.HelmValues, bool) error
+
 type Mapper struct {
-	operatorControllerGates map[configv1.FeatureGateName][]string
-	catalogdGates           map[configv1.FeatureGateName][]string
+	featureGates gateMapFunc
 }
 
 func NewMapper() *Mapper {
 	// Add your downstream to upstream mapping here
-	operatorControllerGates := map[configv1.FeatureGateName][]string{
-		// features.FeatureGateNewOLMMyDownstreamFeature: {MyUpstreamControllerOperatorFeature}
-		features.FeatureGateNewOLMPreflightPermissionChecks:         {PreflightPermissions},
-		features.FeatureGateNewOLMOwnSingleNamespace:                {SingleOwnNamespaceInstallSupport},
-		features.FeatureGateNewOLMWebhookProviderOpenshiftServiceCA: {WebhookProviderOpenshiftServiceCA},
-	}
-	catalogdGates := map[configv1.FeatureGateName][]string{
-		// features.FeatureGateNewOLMMyDownstreamFeature: {MyUpstreamCatalogdFeature}
-		features.FeatureGateNewOLMCatalogdAPIV1Metas: {APIV1MetasHandler},
+
+	featureGates := gateMapFunc{
+		// features.FeatureGateNewOLMMyDownstreamFeature: functon that returns a list of enabled and disabled gates
+		features.FeatureGateNewOLMPreflightPermissionChecks: func(v *helmvalues.HelmValues, enabled bool) error {
+			if enabled {
+				return v.AddListValue(helmvalues.EnableOperatorController, PreflightPermissions)
+			}
+			return v.AddListValue(helmvalues.DisableOperatorController, PreflightPermissions)
+		},
+		features.FeatureGateNewOLMOwnSingleNamespace: func(v *helmvalues.HelmValues, enabled bool) error {
+			if enabled {
+				return v.AddListValue(helmvalues.EnableOperatorController, SingleOwnNamespaceInstallSupport)
+			}
+			return v.AddListValue(helmvalues.DisableOperatorController, SingleOwnNamespaceInstallSupport)
+		},
+		features.FeatureGateNewOLMWebhookProviderOpenshiftServiceCA: func(v *helmvalues.HelmValues, enabled bool) error {
+			var errs []error
+			if enabled {
+				errs = append(errs, v.AddListValue(helmvalues.EnableOperatorController, WebhookProviderOpenshiftServiceCA))
+			} else {
+				errs = append(errs, v.AddListValue(helmvalues.DisableOperatorController, WebhookProviderOpenshiftServiceCA))
+			}
+			errs = append(errs, v.AddListValue(helmvalues.DisableOperatorController, WebhookProviderCertManager))
+			return errors.Join(errs...)
+		},
+		features.FeatureGateNewOLMCatalogdAPIV1Metas: func(v *helmvalues.HelmValues, enabled bool) error {
+			if enabled {
+				return v.AddListValue(helmvalues.EnableCatalogd, APIV1MetasHandler)
+			}
+			return v.AddListValue(helmvalues.DisableCatalogd, APIV1MetasHandler)
+		},
 	}
 
-	for _, m := range []map[configv1.FeatureGateName][]string{operatorControllerGates, catalogdGates} {
+	for _, m := range []gateMapFunc{featureGates} {
 		for downstreamGate := range m {
 			// features.FeatureGateNewOLM is a GA-enabled downstream feature gate.
 			// If there is a need to enable upstream alpha/beta features in the downstream GA release
@@ -63,48 +88,21 @@ func NewMapper() *Mapper {
 		}
 	}
 
-	return &Mapper{operatorControllerGates: operatorControllerGates, catalogdGates: catalogdGates}
+	return &Mapper{featureGates: featureGates}
 }
 
-// OperatorControllerDownstreamFeatureGates returns a list of all downstream feature gates
-// which have an upstream mapping configured for the operator-controller component
-func (m *Mapper) OperatorControllerDownstreamFeatureGates() []configv1.FeatureGateName {
-	return getKeys(m.operatorControllerGates)
-}
-
-// CatalogdDownstreamFeatureGates returns a list of all downstream feature gates
-// which have an upstream mapping configured for the catalogd component
-func (m *Mapper) CatalogdDownstreamFeatureGates() []configv1.FeatureGateName {
-	return getKeys(m.catalogdGates)
-}
-
-// OperatorControllerUpstreamForDownstream returns upstream feature gates which are configured
-// for a given downstream feature gate for the operator-controller component
-func (m *Mapper) OperatorControllerUpstreamForDownstream(downstreamGate configv1.FeatureGateName) []string {
-	return m.operatorControllerGates[downstreamGate]
-}
-
-// CatalogdUpstreamForDownstream returns upstream feature gates which are configured
-// for a given downstream feature gate for the catalogd component
-func (m *Mapper) CatalogdUpstreamForDownstream(downstreamGate configv1.FeatureGateName) []string {
-	return m.catalogdGates[downstreamGate]
-}
-
-// FormatAsEnabledArgs combines list of feature gate names into
-// an all-enabled arg format of <feature_gate_name1>=true,<feature_gate_name1>=true etc.
-func FormatAsEnabledArgs(enabledFeatureGates []string) string {
-	args := make([]string, 0, len(enabledFeatureGates))
-	sort.Strings(enabledFeatureGates)
-	for _, gateName := range enabledFeatureGates {
-		args = append(args, gateName+"=true")
-	}
-	return strings.Join(args, ",")
-}
-
-func getKeys(m map[configv1.FeatureGateName][]string) []configv1.FeatureGateName {
-	keys := make([]configv1.FeatureGateName, 0, len(m))
-	for k := range m {
+// DownstreamFeatureGates returns a list of all downstream feature gates
+// which have an upstream mapping configured
+func (m *Mapper) DownstreamFeatureGates() []configv1.FeatureGateName {
+	keys := make([]configv1.FeatureGateName, 0, len(m.featureGates))
+	for k := range m.featureGates {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// UpstreamForDownstream returns upstream feature gates which are configured
+// for a given downstream feature gate
+func (m *Mapper) UpstreamForDownstream(downstreamGate configv1.FeatureGateName) func(*helmvalues.HelmValues, bool) error {
+	return m.featureGates[downstreamGate]
 }

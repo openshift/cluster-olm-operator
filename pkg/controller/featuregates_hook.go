@@ -1,37 +1,27 @@
 package controller
 
 import (
-	"slices"
+	"errors"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/cluster-olm-operator/pkg/helmvalues"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 )
 
-// upstreamFeatureGates build and returns a unique and ordered list of upstream feature gates names
-// that map to the provided enabled downstream feature gates
+// upstreamFeatureGates builds a set of helm values for the downsteeam feature-gates that are
+// mapped to upstream feature-gates
 func upstreamFeatureGates(
 	clusterGatesConfig featuregates.FeatureGate,
 	downstreamGates []configv1.FeatureGateName,
-	downstreamToUpstreamFunc func(configv1.FeatureGateName) []string,
-) []string {
-	var upstreamGates []string
+	downstreamToUpstreamFunc func(configv1.FeatureGateName) func(*helmvalues.HelmValues, bool) error,
+) (*helmvalues.HelmValues, error) {
+	errs := make([]error, 0, len(downstreamGates))
+	values := helmvalues.NewHelmValues()
 
-	seen := make(map[string]struct{})
 	for _, downstreamGate := range downstreamGates {
-		if !clusterGatesConfig.Enabled(downstreamGate) {
-			continue
-		}
-
-		for _, upstreamGate := range downstreamToUpstreamFunc(downstreamGate) {
-			if _, found := seen[upstreamGate]; found {
-				continue
-			}
-
-			seen[upstreamGate] = struct{}{}
-			upstreamGates = append(upstreamGates, upstreamGate)
-		}
+		f := downstreamToUpstreamFunc(downstreamGate)
+		errs = append(errs, f(values, clusterGatesConfig.Enabled(downstreamGate)))
 	}
-	slices.Sort(upstreamGates)
 
-	return upstreamGates
+	return values, errors.Join(errs...)
 }
