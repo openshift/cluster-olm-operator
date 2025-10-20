@@ -10,6 +10,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -189,8 +190,10 @@ func setupFeatureGatesAccessor(
 var _ v1helpers.OperatorClientWithFinalizers = &OperatorClient{}
 
 const (
-	globalConfigName = "cluster"
-	fieldManager     = "cluster-olm-operator"
+	globalConfigName      = "cluster"
+	fieldManager          = "cluster-olm-operator"
+	specFieldManager      = "cluster-olm-operator-spec"
+	finalizerFieldManager = "cluster-olm-operator-finalizer"
 )
 
 type ClusterExtensionClient struct {
@@ -280,35 +283,39 @@ func (o OperatorClient) ApplyOperatorSpec(ctx context.Context, fieldManager stri
 		return fmt.Errorf("applyConfiguration must have a value")
 	}
 
-	desiredSpec := &operatorv1apply.OLMSpecApplyConfiguration{
-		OperatorSpecApplyConfiguration: *applyConfiguration,
+	// Convert apply configuration to OperatorSpec for patch generation
+	operatorSpec, err := convertApplyConfigToOperatorSpec(applyConfiguration)
+	if err != nil {
+		return fmt.Errorf("error converting apply configuration: %w", err)
 	}
-	desired := operatorv1apply.OLM(globalConfigName)
-	desired.WithSpec(desiredSpec)
 
 	instance, err := o.informers.Operator().V1().OLMs().Lister().Get(globalConfigName)
-	switch {
-	case apierrors.IsNotFound(err):
-		// do nothing and proceed with the apply
-	case err != nil:
+	if err != nil {
 		return fmt.Errorf("unable to get operator configuration: %w", err)
-	default:
-		original, err := operatorv1apply.ExtractOLM(instance, fieldManager)
-		if err != nil {
-			return fmt.Errorf("unable to extract operator configuration: %w", err)
-		}
-		if equality.Semantic.DeepEqual(original, desired) {
-			return nil
-		}
 	}
 
-	_, err = o.clientset.OperatorV1().OLMs().Apply(ctx, desired, metav1.ApplyOptions{
-		Force:        true,
-		FieldManager: fieldManager,
-	})
-	if err != nil {
-		return fmt.Errorf("unable to Apply for operator using fieldManager %q: %w", fieldManager, err)
+	// Check if changes are needed by comparing current spec
+	if needsUpdate, err := operatorSpecNeedsUpdate(instance.Spec.OperatorSpec, *operatorSpec); err != nil {
+		return fmt.Errorf("error checking if update needed: %w", err)
+	} else if !needsUpdate {
+		klog.V(2).Info("ApplyOperatorSpec: no changes detected, skipping patch operation")
+		return nil
 	}
+
+	klog.V(2).Infof("ApplyOperatorSpec: changes detected, applying patch to %s", globalConfigName)
+
+	// Generate patch using the same method as UpdateOperatorSpec
+	patch, err := generateOperatorSpecPatch(instance.ResourceVersion, operatorSpec)
+	if err != nil {
+		return fmt.Errorf("error generating OperatorSpec patch: %w", err)
+	}
+
+	_, err = o.clientset.OperatorV1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: finalizerFieldManager, Force: ptr.To(true)})
+	if err != nil {
+		return fmt.Errorf("unable to patch operator spec using fieldManager %q: %w", fieldManager, err)
+	}
+
+	klog.V(1).Infof("ApplyOperatorSpec: successfully applied operator spec patch to %s", globalConfigName)
 
 	return nil
 }
@@ -426,14 +433,24 @@ func toStatusObj(in *operatorv1apply.OLMStatusApplyConfiguration) (*operatorv1.O
 }
 
 func (o OperatorClient) PatchOperatorStatus(ctx context.Context, jsonPatch *jsonpatch.PatchSet) error {
+	if jsonPatch == nil {
+		return fmt.Errorf("jsonPatch must have a value")
+	}
+
 	jsonPatchBytes, err := jsonPatch.Marshal()
 	if err != nil {
-		return err
+		return fmt.Errorf("error marshaling JSON patch: %w", err)
 	}
-	_, err = o.clientset.OperatorV1().OLMs().Patch(ctx, globalConfigName, types.JSONPatchType, jsonPatchBytes, metav1.PatchOptions{}, "/status")
+
+	klog.V(2).Infof("PatchOperatorStatus: applying %d-byte JSON patch to %s status", len(jsonPatchBytes), globalConfigName)
+
+	_, err = o.clientset.OperatorV1().OLMs().Patch(ctx, globalConfigName, types.JSONPatchType, jsonPatchBytes, metav1.PatchOptions{FieldManager: fieldManager, Force: ptr.To(true)}, "/status")
 	if err != nil {
 		return fmt.Errorf("unable to PatchOperatorStatus for operator using fieldManager %q: %w", fieldManager, err)
 	}
+
+	klog.V(1).Infof("PatchOperatorStatus: successfully patched %s status", globalConfigName)
+
 	return nil
 }
 
@@ -466,12 +483,12 @@ func (o OperatorClient) GetOperatorStateWithQuorum(ctx context.Context) (*operat
 }
 
 func (o OperatorClient) UpdateOperatorSpec(ctx context.Context, oldResourceVersion string, in *operatorv1.OperatorSpec) (*operatorv1.OperatorSpec, string, error) {
-	patch, err := generateOLMPatch(oldResourceVersion, in, "spec")
+	patch, err := generateOperatorSpecPatch(oldResourceVersion, in)
 	if err != nil {
 		return nil, "", fmt.Errorf("error generating patch: %w", err)
 	}
 
-	out, err := o.clientset.OperatorV1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: ptr.To(true)})
+	out, err := o.clientset.OperatorV1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: specFieldManager, Force: ptr.To(true)})
 	if err != nil {
 		return nil, "", err
 	}
@@ -492,41 +509,132 @@ func (o OperatorClient) UpdateOperatorStatus(ctx context.Context, oldResourceVer
 }
 
 func (o OperatorClient) EnsureFinalizer(ctx context.Context, finalizer string) error {
+	if finalizer == "" {
+		return fmt.Errorf("finalizer must not be empty")
+	}
+
 	instance, err := o.informers.Operator().V1().OLMs().Lister().Get(globalConfigName)
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to get operator configuration: %w", err)
 	}
-	newFinalizers := sets.List(sets.New(instance.GetFinalizers()...).Insert(finalizer))
 
-	olm := operatorv1apply.OLM(globalConfigName).WithFinalizers(newFinalizers...)
-	patch, err := json.Marshal(olm)
+	currentFinalizers := instance.GetFinalizers()
+
+	// Check if finalizer already exists
+	finalizersSet := sets.New(currentFinalizers...)
+	if finalizersSet.Has(finalizer) {
+		klog.V(2).Infof("EnsureFinalizer: finalizer %s already exists", finalizer)
+		return nil
+	}
+
+	newFinalizers := sets.List(finalizersSet.Insert(finalizer))
+
+	patch, err := generateFinalizerPatch(instance.ResourceVersion, newFinalizers)
 	if err != nil {
-		return err
+		return fmt.Errorf("error generating finalizer patch: %w", err)
 	}
 
-	if _, err := o.clientset.OperatorV1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: ptr.To(true)}); err != nil {
-		return err
+	klog.V(2).Infof("EnsureFinalizer: adding finalizer %s to %s", finalizer, globalConfigName)
+
+	_, err = o.clientset.OperatorV1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: finalizerFieldManager, Force: ptr.To(true)})
+	if err != nil {
+		return fmt.Errorf("unable to patch operator for finalizer %q: %w", finalizer, err)
 	}
+
+	klog.V(1).Infof("EnsureFinalizer: successfully added finalizer %s to %s", finalizer, globalConfigName)
+
 	return nil
 }
 
 func (o OperatorClient) RemoveFinalizer(ctx context.Context, finalizer string) error {
+	if finalizer == "" {
+		return fmt.Errorf("finalizer must not be empty")
+	}
+
 	instance, err := o.informers.Operator().V1().OLMs().Lister().Get(globalConfigName)
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to get operator configuration: %w", err)
 	}
-	newFinalizers := sets.List(sets.New(instance.GetFinalizers()...).Delete(finalizer))
 
-	olm := operatorv1apply.OLM(globalConfigName).WithFinalizers(newFinalizers...)
-	patch, err := json.Marshal(olm)
+	currentFinalizers := instance.GetFinalizers()
+
+	// Check if finalizer exists
+	finalizersSet := sets.New(currentFinalizers...)
+	if !finalizersSet.Has(finalizer) {
+		klog.V(2).Infof("RemoveFinalizer: finalizer %s not found", finalizer)
+		return nil
+	}
+
+	newFinalizers := sets.List(finalizersSet.Delete(finalizer))
+
+	patch, err := generateFinalizerPatch(instance.ResourceVersion, newFinalizers)
 	if err != nil {
-		return err
+		return fmt.Errorf("error generating finalizer patch: %w", err)
 	}
 
-	if _, err := o.clientset.OperatorV1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: fieldManager, Force: ptr.To(true)}); err != nil {
-		return err
+	klog.V(2).Infof("RemoveFinalizer: removing finalizer %s from %s", finalizer, globalConfigName)
+
+	_, err = o.clientset.OperatorV1().OLMs().Patch(ctx, globalConfigName, types.ApplyPatchType, patch, metav1.PatchOptions{FieldManager: finalizerFieldManager, Force: ptr.To(true)})
+	if err != nil {
+		return fmt.Errorf("unable to patch operator for finalizer %q removal: %w", finalizer, err)
 	}
+
+	klog.V(1).Infof("RemoveFinalizer: successfully removed finalizer %s from %s", finalizer, globalConfigName)
+
 	return nil
+}
+
+func generateOperatorSpecPatch(_ string, operatorSpec *operatorv1.OperatorSpec) ([]byte, error) {
+	var u unstructured.Unstructured
+	u.SetAPIVersion(schema.GroupVersion{Group: operatorv1.GroupName, Version: "v1"}.String())
+	u.SetKind("OLM")
+	// NOTE: Do NOT set resourceVersion in metadata to avoid conflicting with finalizer patches
+	// that also modify metadata fields using the same field manager
+
+	// Convert the OperatorSpec to unstructured to properly handle RawExtension fields
+	specUnstructured, err := runtime.DefaultUnstructuredConverter.ToUnstructured(operatorSpec)
+	if err != nil {
+		return nil, fmt.Errorf("error converting OperatorSpec to unstructured: %w", err)
+	}
+
+	// Create the spec object in the patch with all OperatorSpec fields
+	specObj := map[string]interface{}{
+		"managementState":  string(operatorSpec.ManagementState),
+		"logLevel":         string(operatorSpec.LogLevel),
+		"operatorLogLevel": string(operatorSpec.OperatorLogLevel),
+	}
+
+	// Handle RawExtension fields properly
+	if unsupportedConfig, found := specUnstructured["unsupportedConfigOverrides"]; found {
+		specObj["unsupportedConfigOverrides"] = unsupportedConfig
+	} else {
+		specObj["unsupportedConfigOverrides"] = nil
+	}
+
+	if observedConfig, found := specUnstructured["observedConfig"]; found {
+		specObj["observedConfig"] = observedConfig
+		if klog.V(3).Enabled() {
+			if configBytes, err := json.Marshal(observedConfig); err == nil {
+				klog.V(3).Infof("OperatorSpec patch: observedConfig content: %s", string(configBytes))
+			}
+		}
+	} else {
+		specObj["observedConfig"] = nil
+	}
+
+	// Set the spec field with only OperatorSpec fields
+	if err := unstructured.SetNestedField(u.Object, specObj, "spec"); err != nil {
+		return nil, fmt.Errorf("error setting spec: %w", err)
+	}
+
+	patchBytes, err := json.Marshal(u.Object)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling patch: %w", err)
+	}
+
+	klog.V(2).Infof("OperatorSpec patch: generated %d-byte patch for operator spec", len(patchBytes))
+
+	return patchBytes, nil
 }
 
 func generateOLMPatch(resourceVersion string, in any, fieldPath ...string) ([]byte, error) {
@@ -540,9 +648,125 @@ func generateOLMPatch(resourceVersion string, in any, fieldPath ...string) ([]by
 		return nil, fmt.Errorf("error converting to unstructured: %w", err)
 	}
 
+	fieldPathStr := strings.Join(fieldPath, ".")
 	if err := unstructured.SetNestedField(u.Object, inUnstructured, fieldPath...); err != nil {
-		return nil, fmt.Errorf("error setting %q: %w", strings.Join(fieldPath, "."), err)
+		return nil, fmt.Errorf("error setting %q: %w", fieldPathStr, err)
 	}
 
-	return json.Marshal(u.Object)
+	patchBytes, err := json.Marshal(u.Object)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling patch: %w", err)
+	}
+
+	klog.V(2).Infof("OLM patch: generated %d-byte patch for field path '%s'", len(patchBytes), fieldPathStr)
+
+	return patchBytes, nil
+}
+
+// generateFinalizerPatch creates a patch that only modifies the finalizers field
+// without affecting other fields that might be managed by the same field manager
+func generateFinalizerPatch(resourceVersion string, finalizers []string) ([]byte, error) {
+	var u unstructured.Unstructured
+	u.SetAPIVersion(schema.GroupVersion{Group: operatorv1.GroupName, Version: "v1"}.String())
+	u.SetKind("OLM")
+	u.SetResourceVersion(resourceVersion)
+
+	// Set only the finalizers field in metadata
+	if err := unstructured.SetNestedStringSlice(u.Object, finalizers, "metadata", "finalizers"); err != nil {
+		return nil, fmt.Errorf("error setting finalizers: %w", err)
+	}
+
+	patchBytes, err := json.Marshal(u.Object)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling finalizer patch: %w", err)
+	}
+
+	klog.V(2).Infof("Finalizer patch: generated %d-byte patch with %d finalizers", len(patchBytes), len(finalizers))
+
+	return patchBytes, nil
+}
+
+// convertApplyConfigToOperatorSpec converts an OperatorSpecApplyConfiguration to an OperatorSpec
+func convertApplyConfigToOperatorSpec(applyConfig *operatorv1apply.OperatorSpecApplyConfiguration) (*operatorv1.OperatorSpec, error) {
+	// Marshal apply configuration to JSON
+	jsonBytes, err := json.Marshal(applyConfig)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling apply configuration: %w", err)
+	}
+
+	// Unmarshal to OperatorSpec
+	var operatorSpec operatorv1.OperatorSpec
+	if err := json.Unmarshal(jsonBytes, &operatorSpec); err != nil {
+		return nil, fmt.Errorf("error unmarshaling to OperatorSpec: %w", err)
+	}
+
+	return &operatorSpec, nil
+}
+
+// operatorSpecNeedsUpdate checks if the current OperatorSpec differs from the desired OperatorSpec
+func operatorSpecNeedsUpdate(current, desired operatorv1.OperatorSpec) (bool, error) {
+	// Compare management state
+	if current.ManagementState != desired.ManagementState {
+		klog.V(2).Infof("ManagementState differs: current=%s, desired=%s", current.ManagementState, desired.ManagementState)
+		return true, nil
+	}
+
+	// Compare log levels
+	if current.LogLevel != desired.LogLevel {
+		klog.V(2).Infof("LogLevel differs: current=%s, desired=%s", current.LogLevel, desired.LogLevel)
+		return true, nil
+	}
+
+	if current.OperatorLogLevel != desired.OperatorLogLevel {
+		klog.V(2).Infof("OperatorLogLevel differs: current=%s, desired=%s", current.OperatorLogLevel, desired.OperatorLogLevel)
+		return true, nil
+	}
+
+	// Compare RawExtension fields by converting to unstructured for comparison
+	currentUnsupportedConfig, err := rawExtensionToUnstructured(current.UnsupportedConfigOverrides)
+	if err != nil {
+		return false, fmt.Errorf("error converting current unsupportedConfigOverrides: %w", err)
+	}
+
+	desiredUnsupportedConfig, err := rawExtensionToUnstructured(desired.UnsupportedConfigOverrides)
+	if err != nil {
+		return false, fmt.Errorf("error converting desired unsupportedConfigOverrides: %w", err)
+	}
+
+	if !equality.Semantic.DeepEqual(currentUnsupportedConfig, desiredUnsupportedConfig) {
+		klog.V(2).Info("UnsupportedConfigOverrides differs")
+		return true, nil
+	}
+
+	// Compare observedConfig
+	currentObservedConfig, err := rawExtensionToUnstructured(current.ObservedConfig)
+	if err != nil {
+		return false, fmt.Errorf("error converting current observedConfig: %w", err)
+	}
+
+	desiredObservedConfig, err := rawExtensionToUnstructured(desired.ObservedConfig)
+	if err != nil {
+		return false, fmt.Errorf("error converting desired observedConfig: %w", err)
+	}
+
+	if !equality.Semantic.DeepEqual(currentObservedConfig, desiredObservedConfig) {
+		klog.V(2).Info("ObservedConfig differs")
+		return true, nil
+	}
+
+	return false, nil
+}
+
+// rawExtensionToUnstructured converts a RawExtension to unstructured data for comparison
+func rawExtensionToUnstructured(raw runtime.RawExtension) (interface{}, error) {
+	if len(raw.Raw) == 0 {
+		return nil, nil
+	}
+
+	var result interface{}
+	if err := json.Unmarshal(raw.Raw, &result); err != nil {
+		return nil, fmt.Errorf("error unmarshaling RawExtension: %w", err)
+	}
+
+	return result, nil
 }

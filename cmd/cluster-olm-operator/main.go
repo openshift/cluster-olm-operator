@@ -182,6 +182,13 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		cc.EventRecorder.ForComponent(olmProxyController),
 	)
 
+	tlsObserverController := controller.NewTLSObserverController(
+		"OLMTLSSecurityProfileObserver",
+		cl.OperatorClient,
+		cl.ConfigInformerFactory,
+		cc.EventRecorder.ForComponent("OLMTLSSecurityProfileObserver"),
+	)
+
 	versionGetter := status.NewVersionGetter()
 	versionGetter.SetVersion("operator", status.VersionForOperatorFromEnv())
 
@@ -216,7 +223,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		return errors.New("timed out waiting for FeatureGate detection")
 	}
 
-	for _, c := range append(staticResourceControllerList, upgradeableConditionController, incompatibleOperatorController, clusterOperatorController, operatorLoggingController, proxyController) {
+	for _, c := range append(staticResourceControllerList, upgradeableConditionController, incompatibleOperatorController, clusterOperatorController, operatorLoggingController, proxyController, tlsObserverController.Controller) {
 		go func(c factory.Controller) {
 			defer runtime.HandleCrash()
 			c.Run(ctx, 1)

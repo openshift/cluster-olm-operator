@@ -1,0 +1,75 @@
+package controller
+
+import (
+	"testing"
+
+	configv1 "github.com/openshift/api/config/v1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+)
+
+type MockProxyClient struct {
+	configv1.Proxy
+}
+
+func (m *MockProxyClient) Get(_ string) (*configv1.Proxy, error) {
+	return &m.Proxy, nil
+}
+
+func TestProxyUpdateEnv(t *testing.T) {
+	mpc := MockProxyClient{
+		Proxy: configv1.Proxy{
+			Status: configv1.ProxyStatus{
+				HTTPProxy:  HTTPProxy,
+				HTTPSProxy: HTTPSProxy,
+				NoProxy:    NoProxy,
+			},
+		},
+	}
+
+	dep := appsv1.Deployment{
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	update := UpdateDeploymentProxyHook(&mpc)
+	err := update(nil, &dep)
+	if err != nil {
+		t.Fatalf("unexpected error in first update: %v", err)
+	}
+	if len(dep.Spec.Template.Spec.Containers[0].Env) != 3 {
+		t.Fatalf("environment length not 3: %+v", dep)
+	}
+
+	// We want to make sure the order is preserved, so check explicitly
+	expectedVars := []corev1.EnvVar{
+		{Name: HTTPSProxy, Value: HTTPSProxy},
+		{Name: HTTPProxy, Value: HTTPProxy},
+		{Name: NoProxy, Value: NoProxy},
+	}
+	validateEnvVarsOrFail(t, expectedVars, dep.Spec.Template.Spec.Containers[0].Env)
+
+	err = update(nil, &dep)
+	if err == nil {
+		t.Fatal("no error in second update")
+	}
+	// Make sure the Deployment is unchanged
+	validateEnvVarsOrFail(t, expectedVars, dep.Spec.Template.Spec.Containers[0].Env)
+}
+
+func validateEnvVarsOrFail(t *testing.T, in, expected []corev1.EnvVar) {
+	for i := range in {
+		if in[i] != expected[i] {
+			t.Fatalf("iter %d: expected: %+v, got: %+v", i, in[i], expected[i])
+		}
+	}
+}

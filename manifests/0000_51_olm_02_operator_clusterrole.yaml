@@ -27,6 +27,7 @@ rules:
       - proxies
       - featuregates
       - clusterversions
+      - apiservers
     verbs:
       - get
       - list
