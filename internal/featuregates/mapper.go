@@ -62,6 +62,7 @@ func NewMapper() *Mapper {
 			} else {
 				errs = append(errs, v.AddListValue(helmvalues.DisableOperatorController, WebhookProviderOpenshiftServiceCA))
 			}
+			// Always disable WebhookProviderCertManager
 			errs = append(errs, v.AddListValue(helmvalues.DisableOperatorController, WebhookProviderCertManager))
 			return errors.Join(errs...)
 		},

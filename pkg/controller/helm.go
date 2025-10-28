@@ -61,6 +61,12 @@ func (b *Builder) renderHelmTemplate(helmPath, manifestDir string) error {
 		return fmt.Errorf("error from GatherHelmValuesFromFiles: %w", err)
 	}
 
+	// Clear any feature gate settings from helm values files
+	// This ensures cluster feature gate configuration takes precedence
+	if err := values.ClearFeatureGates(); err != nil {
+		return fmt.Errorf("error from ClearFeatureGates: %w", err)
+	}
+
 	// Add the featureGateValues
 	if err := values.AddValues(featureGateValues); err != nil {
 		return fmt.Errorf("error from AddValues: %w", err)

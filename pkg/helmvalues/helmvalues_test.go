@@ -365,7 +365,7 @@ func TestAddListValue(t *testing.T) {
 			},
 		},
 		{
-			name: "add duplicate value",
+			name: "add duplicate value - idempotent",
 			initialVals: map[string]interface{}{
 				"options": map[string]interface{}{
 					"features": map[string]interface{}{
@@ -375,7 +375,14 @@ func TestAddListValue(t *testing.T) {
 			},
 			location:    "options.features.enabled",
 			value:       "feature1",
-			expectError: true,
+			expectError: false,
+			expectedVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"features": map[string]interface{}{
+						"enabled": []interface{}{"feature1"},
+					},
+				},
+			},
 		},
 		{
 			name: "add with sorting",
@@ -405,6 +412,131 @@ func TestAddListValue(t *testing.T) {
 			hv.values = tt.initialVals
 
 			err := hv.AddListValue(tt.location, tt.value)
+
+			if tt.expectError && err == nil {
+				t.Errorf("Expected error, got nil")
+			}
+			if !tt.expectError && err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+			if !tt.expectError && !reflect.DeepEqual(hv.values, tt.expectedVals) {
+				t.Errorf("Expected %v, got %v", tt.expectedVals, hv.values)
+			}
+		})
+	}
+}
+
+func TestRemoveListValue(t *testing.T) {
+	tests := []struct {
+		name         string
+		initialVals  map[string]interface{}
+		location     string
+		value        string
+		expectError  bool
+		expectedVals map[string]interface{}
+	}{
+		{
+			name:        "empty location",
+			location:    "",
+			value:       "test",
+			expectError: true,
+		},
+		{
+			name:         "remove from non-existent location - idempotent",
+			initialVals:  make(map[string]interface{}),
+			location:     "options.features.enabled",
+			value:        "feature1",
+			expectError:  false,
+			expectedVals: map[string]interface{}{},
+		},
+		{
+			name: "remove existing value",
+			initialVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"features": map[string]interface{}{
+						"enabled": []interface{}{"feature1", "feature2"},
+					},
+				},
+			},
+			location:    "options.features.enabled",
+			value:       "feature1",
+			expectError: false,
+			expectedVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"features": map[string]interface{}{
+						"enabled": []interface{}{"feature2"},
+					},
+				},
+			},
+		},
+		{
+			name: "remove last value from list",
+			initialVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"features": map[string]interface{}{
+						"enabled": []interface{}{"feature1"},
+					},
+				},
+			},
+			location:    "options.features.enabled",
+			value:       "feature1",
+			expectError: false,
+			expectedVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"features": map[string]interface{}{
+						"enabled": []interface{}{},
+					},
+				},
+			},
+		},
+		{
+			name: "remove non-existent value - idempotent",
+			initialVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"features": map[string]interface{}{
+						"enabled": []interface{}{"feature1", "feature2"},
+					},
+				},
+			},
+			location:    "options.features.enabled",
+			value:       "feature3",
+			expectError: false,
+			expectedVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"features": map[string]interface{}{
+						"enabled": []interface{}{"feature1", "feature2"},
+					},
+				},
+			},
+		},
+		{
+			name: "remove middle value from list",
+			initialVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"features": map[string]interface{}{
+						"enabled": []interface{}{"feature1", "feature2", "feature3"},
+					},
+				},
+			},
+			location:    "options.features.enabled",
+			value:       "feature2",
+			expectError: false,
+			expectedVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"features": map[string]interface{}{
+						"enabled": []interface{}{"feature1", "feature3"},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hv := NewHelmValues()
+			hv.values = tt.initialVals
+
+			err := hv.RemoveListValue(tt.location, tt.value)
 
 			if tt.expectError && err == nil {
 				t.Errorf("Expected error, got nil")
@@ -489,6 +621,156 @@ func TestAddValues(t *testing.T) {
 			newHv.values = tt.newVals
 
 			err := hv.AddValues(newHv)
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+
+			if !reflect.DeepEqual(hv.values, tt.expectedVals) {
+				t.Errorf("Expected %v, got %v", tt.expectedVals, hv.values)
+			}
+		})
+	}
+}
+
+func TestClearFeatureGates(t *testing.T) {
+	tests := []struct {
+		name         string
+		initialVals  map[string]interface{}
+		expectedVals map[string]interface{}
+	}{
+		{
+			name:         "empty values",
+			initialVals:  make(map[string]interface{}),
+			expectedVals: map[string]interface{}{},
+		},
+		{
+			name: "clear operator controller feature gates",
+			initialVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"operatorController": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled":  []interface{}{"feature1"},
+							"disabled": []interface{}{"feature2"},
+						},
+					},
+				},
+			},
+			expectedVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"operatorController": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled":  []interface{}{},
+							"disabled": []interface{}{},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "clear catalogd feature gates",
+			initialVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"catalogd": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled":  []interface{}{"APIV1MetasHandler"},
+							"disabled": []interface{}{},
+						},
+					},
+				},
+			},
+			expectedVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"catalogd": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled":  []interface{}{},
+							"disabled": []interface{}{},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "clear both operator controller and catalogd feature gates",
+			initialVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"operatorController": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled":  []interface{}{"feature1"},
+							"disabled": []interface{}{"feature2"},
+						},
+					},
+					"catalogd": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled":  []interface{}{"APIV1MetasHandler"},
+							"disabled": []interface{}{},
+						},
+					},
+				},
+			},
+			expectedVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"operatorController": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled":  []interface{}{},
+							"disabled": []interface{}{},
+						},
+					},
+					"catalogd": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled":  []interface{}{},
+							"disabled": []interface{}{},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "preserve other values",
+			initialVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"operatorController": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled": []interface{}{"feature1"},
+						},
+						"image": "test-image",
+					},
+					"catalogd": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled": []interface{}{"APIV1MetasHandler"},
+						},
+						"deployment": map[string]interface{}{
+							"replicas": 1,
+						},
+					},
+				},
+			},
+			expectedVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"operatorController": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled": []interface{}{},
+						},
+						"image": "test-image",
+					},
+					"catalogd": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled": []interface{}{},
+						},
+						"deployment": map[string]interface{}{
+							"replicas": 1,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hv := NewHelmValues()
+			hv.values = tt.initialVals
+
+			err := hv.ClearFeatureGates()
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
 			}
