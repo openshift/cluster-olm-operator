@@ -14,12 +14,6 @@ import (
 	"github.com/openshift/cluster-olm-operator/pkg/clients"
 )
 
-const (
-	HTTPProxy  = "HTTP_PROXY"
-	HTTPSProxy = "HTTPS_PROXY"
-	NoProxy    = "NO_PROXY"
-)
-
 func NewProxyController(name string, proxyClient *clients.ProxyClient, operatorClient *clients.OperatorClient, eventRecorder events.Recorder) factory.Controller {
 	c := proxyController{
 		name:        name,
