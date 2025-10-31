@@ -38,38 +38,46 @@ type Mapper struct {
 	featureGates gateMapFunc
 }
 
+func enableFeature(v *helmvalues.HelmValues, addList, removeList, feature string) error {
+	var errs []error
+	errs = append(errs, v.RemoveListValue(removeList, feature))
+	errs = append(errs, v.AddListValue(addList, feature))
+	return errors.Join(errs...)
+}
+func enableCatalogdFeature(v *helmvalues.HelmValues, enabled bool, feature string) error {
+	if enabled {
+		return enableFeature(v, helmvalues.EnableCatalogd, helmvalues.DisableCatalogd, feature)
+	}
+	return enableFeature(v, helmvalues.DisableCatalogd, helmvalues.EnableCatalogd, feature)
+}
+
+func enableOperatorControllerFeature(v *helmvalues.HelmValues, enabled bool, feature string) error {
+	if enabled {
+		return enableFeature(v, helmvalues.EnableOperatorController, helmvalues.DisableOperatorController, feature)
+	}
+	return enableFeature(v, helmvalues.DisableOperatorController, helmvalues.EnableOperatorController, feature)
+}
+
 func NewMapper() *Mapper {
 	// Add your downstream to upstream mapping here
 
 	featureGates := gateMapFunc{
 		// features.FeatureGateNewOLMMyDownstreamFeature: functon that returns a list of enabled and disabled gates
 		features.FeatureGateNewOLMPreflightPermissionChecks: func(v *helmvalues.HelmValues, enabled bool) error {
-			if enabled {
-				return v.AddListValue(helmvalues.EnableOperatorController, PreflightPermissions)
-			}
-			return v.AddListValue(helmvalues.DisableOperatorController, PreflightPermissions)
+			return enableOperatorControllerFeature(v, enabled, PreflightPermissions)
 		},
 		features.FeatureGateNewOLMOwnSingleNamespace: func(v *helmvalues.HelmValues, enabled bool) error {
-			if enabled {
-				return v.AddListValue(helmvalues.EnableOperatorController, SingleOwnNamespaceInstallSupport)
-			}
-			return v.AddListValue(helmvalues.DisableOperatorController, SingleOwnNamespaceInstallSupport)
+			return enableOperatorControllerFeature(v, enabled, SingleOwnNamespaceInstallSupport)
 		},
 		features.FeatureGateNewOLMWebhookProviderOpenshiftServiceCA: func(v *helmvalues.HelmValues, enabled bool) error {
 			var errs []error
-			if enabled {
-				errs = append(errs, v.AddListValue(helmvalues.EnableOperatorController, WebhookProviderOpenshiftServiceCA))
-			} else {
-				errs = append(errs, v.AddListValue(helmvalues.DisableOperatorController, WebhookProviderOpenshiftServiceCA))
-			}
-			errs = append(errs, v.AddListValue(helmvalues.DisableOperatorController, WebhookProviderCertManager))
+			errs = append(errs, enableOperatorControllerFeature(v, enabled, WebhookProviderOpenshiftServiceCA))
+			// Always disable WebhookProviderCertManager
+			errs = append(errs, enableOperatorControllerFeature(v, false, WebhookProviderCertManager))
 			return errors.Join(errs...)
 		},
 		features.FeatureGateNewOLMCatalogdAPIV1Metas: func(v *helmvalues.HelmValues, enabled bool) error {
-			if enabled {
-				return v.AddListValue(helmvalues.EnableCatalogd, APIV1MetasHandler)
-			}
-			return v.AddListValue(helmvalues.DisableCatalogd, APIV1MetasHandler)
+			return enableCatalogdFeature(v, enabled, APIV1MetasHandler)
 		},
 	}
 

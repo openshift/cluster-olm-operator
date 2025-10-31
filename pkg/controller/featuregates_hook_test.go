@@ -276,6 +276,7 @@ func TestUpstreamFeatureGates(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := upstreamFeatureGates(
+				helmvalues.NewHelmValues(),
 				tt.clusterGatesConfig,
 				tt.downstreamGates,
 				tt.downstreamToUpstreamFunc,
@@ -319,7 +320,7 @@ func TestUpstreamFeatureGates_NilMappingFunction(t *testing.T) {
 		return nil // Return nil function
 	}
 
-	_, _ = upstreamFeatureGates(clusterGatesConfig, downstreamGates, downstreamToUpstreamFunc)
+	_, _ = upstreamFeatureGates(helmvalues.NewHelmValues(), clusterGatesConfig, downstreamGates, downstreamToUpstreamFunc)
 }
 
 func TestUpstreamFeatureGates_EdgeCases(t *testing.T) {
@@ -332,6 +333,7 @@ func TestUpstreamFeatureGates_EdgeCases(t *testing.T) {
 		downstreamGates := []configv1.FeatureGateName{features.FeatureGateNewOLMPreflightPermissionChecks}
 
 		result, err := upstreamFeatureGates(
+			helmvalues.NewHelmValues(),
 			clusterGatesConfig,
 			downstreamGates,
 			func(_ configv1.FeatureGateName) func(*helmvalues.HelmValues, bool) error {
