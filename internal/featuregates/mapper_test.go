@@ -126,15 +126,7 @@ func TestMapper_FeatureGateMappings(t *testing.T) {
 			name:           "PreflightPermissionChecks disabled",
 			downstreamGate: features.FeatureGateNewOLMPreflightPermissionChecks,
 			enabled:        false,
-			expectedValues: map[string]interface{}{
-				"options": map[string]interface{}{
-					"operatorController": map[string]interface{}{
-						"features": map[string]interface{}{
-							"disabled": []interface{}{PreflightPermissions},
-						},
-					},
-				},
-			},
+			expectedValues: map[string]interface{}{}, // No explicit disable - use upstream default
 		},
 		{
 			name:           "OwnSingleNamespace enabled",
@@ -154,15 +146,7 @@ func TestMapper_FeatureGateMappings(t *testing.T) {
 			name:           "OwnSingleNamespace disabled",
 			downstreamGate: features.FeatureGateNewOLMOwnSingleNamespace,
 			enabled:        false,
-			expectedValues: map[string]interface{}{
-				"options": map[string]interface{}{
-					"operatorController": map[string]interface{}{
-						"features": map[string]interface{}{
-							"disabled": []interface{}{SingleOwnNamespaceInstallSupport},
-						},
-					},
-				},
-			},
+			expectedValues: map[string]interface{}{}, // No explicit disable - use upstream default
 		},
 		{
 			name:           "WebhookProviderOpenshiftServiceCA enabled",
@@ -187,7 +171,7 @@ func TestMapper_FeatureGateMappings(t *testing.T) {
 				"options": map[string]interface{}{
 					"operatorController": map[string]interface{}{
 						"features": map[string]interface{}{
-							"disabled": []interface{}{WebhookProviderCertManager, WebhookProviderOpenshiftServiceCA},
+							"disabled": []interface{}{WebhookProviderCertManager}, // Only CertManager is explicitly disabled
 						},
 					},
 				},
@@ -211,15 +195,7 @@ func TestMapper_FeatureGateMappings(t *testing.T) {
 			name:           "CatalogdAPIV1Metas disabled",
 			downstreamGate: features.FeatureGateNewOLMCatalogdAPIV1Metas,
 			enabled:        false,
-			expectedValues: map[string]interface{}{
-				"options": map[string]interface{}{
-					"catalogd": map[string]interface{}{
-						"features": map[string]interface{}{
-							"disabled": []interface{}{APIV1MetasHandler},
-						},
-					},
-				},
-			},
+			expectedValues: map[string]interface{}{}, // No explicit disable - use upstream default
 		},
 	}
 

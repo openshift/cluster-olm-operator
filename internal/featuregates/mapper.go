@@ -43,33 +43,39 @@ func NewMapper() *Mapper {
 
 	featureGates := gateMapFunc{
 		// features.FeatureGateNewOLMMyDownstreamFeature: functon that returns a list of enabled and disabled gates
+		// NOTE: Following Kubernetes best practices, we only set feature gates when changing the default behavior.
+		// If a feature is disabled by default, we don't explicitly set --feature-gates=FeatureName=false
 		features.FeatureGateNewOLMPreflightPermissionChecks: func(v *helmvalues.HelmValues, enabled bool) error {
 			if enabled {
 				return v.AddListValue(helmvalues.EnableOperatorController, PreflightPermissions)
 			}
-			return v.AddListValue(helmvalues.DisableOperatorController, PreflightPermissions)
+			// Don't explicitly disable - let it use the upstream default
+			return nil
 		},
 		features.FeatureGateNewOLMOwnSingleNamespace: func(v *helmvalues.HelmValues, enabled bool) error {
 			if enabled {
 				return v.AddListValue(helmvalues.EnableOperatorController, SingleOwnNamespaceInstallSupport)
 			}
-			return v.AddListValue(helmvalues.DisableOperatorController, SingleOwnNamespaceInstallSupport)
+			// Don't explicitly disable - let it use the upstream default
+			return nil
 		},
 		features.FeatureGateNewOLMWebhookProviderOpenshiftServiceCA: func(v *helmvalues.HelmValues, enabled bool) error {
-			var errs []error
-			if enabled {
-				errs = append(errs, v.AddListValue(helmvalues.EnableOperatorController, WebhookProviderOpenshiftServiceCA))
-			} else {
-				errs = append(errs, v.AddListValue(helmvalues.DisableOperatorController, WebhookProviderOpenshiftServiceCA))
+			// Always disable CertManager (downstream-specific requirement)
+			if err := v.AddListValue(helmvalues.DisableOperatorController, WebhookProviderCertManager); err != nil {
+				return err
 			}
-			errs = append(errs, v.AddListValue(helmvalues.DisableOperatorController, WebhookProviderCertManager))
-			return errors.Join(errs...)
+			if enabled {
+				return v.AddListValue(helmvalues.EnableOperatorController, WebhookProviderOpenshiftServiceCA)
+			}
+			// Don't explicitly disable OpenshiftServiceCA - let it use the upstream default
+			return nil
 		},
 		features.FeatureGateNewOLMCatalogdAPIV1Metas: func(v *helmvalues.HelmValues, enabled bool) error {
 			if enabled {
 				return v.AddListValue(helmvalues.EnableCatalogd, APIV1MetasHandler)
 			}
-			return v.AddListValue(helmvalues.DisableCatalogd, APIV1MetasHandler)
+			// Don't explicitly disable - let it use the upstream default
+			return nil
 		},
 	}
 

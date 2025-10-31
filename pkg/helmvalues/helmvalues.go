@@ -106,3 +106,23 @@ func (v *HelmValues) AddListValue(location string, newValue string) error {
 func (v *HelmValues) AddValues(newValues *HelmValues) error {
 	return deepmerge.DeepMerge(v.values, newValues.values, deepmerge.Config{})
 }
+
+// ClearFeatureGates removes all feature gate settings from the helm values
+// This is used to ensure cluster feature gate configuration takes precedence
+// over any feature gates defined in helm values files
+func (v *HelmValues) ClearFeatureGates() error {
+	locationsToClear := []string{
+		EnableOperatorController,
+		DisableOperatorController,
+		EnableCatalogd,
+		DisableCatalogd,
+	}
+	for _, location := range locationsToClear {
+		if _, found, _ := unstructured.NestedStringSlice(v.values, strings.Split(location, ".")...); found {
+			if err := unstructured.SetNestedStringSlice(v.values, []string{}, strings.Split(location, ".")...); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
