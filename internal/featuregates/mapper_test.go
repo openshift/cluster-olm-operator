@@ -298,3 +298,317 @@ func TestMapper_Constants(t *testing.T) {
 		t.Error("APIV1MetasHandler and PreflightPermissions should be different")
 	}
 }
+
+func TestEnableFeature(t *testing.T) {
+	tests := []struct {
+		name         string
+		addList      string
+		removeList   string
+		feature      string
+		initialVals  map[string]interface{}
+		expectedVals map[string]interface{}
+	}{
+		{
+			name:        "enable feature in empty values",
+			addList:     helmvalues.EnableOperatorController,
+			removeList:  helmvalues.DisableOperatorController,
+			feature:     PreflightPermissions,
+			initialVals: make(map[string]interface{}),
+			expectedVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"operatorController": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled": []interface{}{PreflightPermissions},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:       "enable feature and remove from disabled list",
+			addList:    helmvalues.EnableOperatorController,
+			removeList: helmvalues.DisableOperatorController,
+			feature:    PreflightPermissions,
+			initialVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"operatorController": map[string]interface{}{
+						"features": map[string]interface{}{
+							"disabled": []interface{}{PreflightPermissions},
+						},
+					},
+				},
+			},
+			expectedVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"operatorController": map[string]interface{}{
+						"features": map[string]interface{}{
+							"disabled": []interface{}{},
+							"enabled":  []interface{}{PreflightPermissions},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:       "enable catalogd feature",
+			addList:    helmvalues.EnableCatalogd,
+			removeList: helmvalues.DisableCatalogd,
+			feature:    APIV1MetasHandler,
+			initialVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"catalogd": map[string]interface{}{
+						"features": map[string]interface{}{
+							"disabled": []interface{}{APIV1MetasHandler},
+						},
+					},
+				},
+			},
+			expectedVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"catalogd": map[string]interface{}{
+						"features": map[string]interface{}{
+							"disabled": []interface{}{},
+							"enabled":  []interface{}{APIV1MetasHandler},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hv := helmvalues.NewHelmValues()
+			hv.GetValues()
+			for k, v := range tt.initialVals {
+				hv.GetValues()[k] = v
+			}
+
+			err := enableFeature(hv, tt.addList, tt.removeList, tt.feature)
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			actual := hv.GetValues()
+			if !reflect.DeepEqual(actual, tt.expectedVals) {
+				t.Errorf("Expected values %v, got %v", tt.expectedVals, actual)
+			}
+		})
+	}
+}
+
+func TestEnableOperatorControllerFeature(t *testing.T) {
+	tests := []struct {
+		name         string
+		enabled      bool
+		feature      string
+		initialVals  map[string]interface{}
+		expectedVals map[string]interface{}
+	}{
+		{
+			name:        "enable feature",
+			enabled:     true,
+			feature:     PreflightPermissions,
+			initialVals: make(map[string]interface{}),
+			expectedVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"operatorController": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled": []interface{}{PreflightPermissions},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:        "disable feature",
+			enabled:     false,
+			feature:     PreflightPermissions,
+			initialVals: make(map[string]interface{}),
+			expectedVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"operatorController": map[string]interface{}{
+						"features": map[string]interface{}{
+							"disabled": []interface{}{PreflightPermissions},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:    "enable feature removes from disabled",
+			enabled: true,
+			feature: SingleOwnNamespaceInstallSupport,
+			initialVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"operatorController": map[string]interface{}{
+						"features": map[string]interface{}{
+							"disabled": []interface{}{SingleOwnNamespaceInstallSupport},
+						},
+					},
+				},
+			},
+			expectedVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"operatorController": map[string]interface{}{
+						"features": map[string]interface{}{
+							"disabled": []interface{}{},
+							"enabled":  []interface{}{SingleOwnNamespaceInstallSupport},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:    "disable feature removes from enabled",
+			enabled: false,
+			feature: SingleOwnNamespaceInstallSupport,
+			initialVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"operatorController": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled": []interface{}{SingleOwnNamespaceInstallSupport},
+						},
+					},
+				},
+			},
+			expectedVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"operatorController": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled":  []interface{}{},
+							"disabled": []interface{}{SingleOwnNamespaceInstallSupport},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hv := helmvalues.NewHelmValues()
+			for k, v := range tt.initialVals {
+				hv.GetValues()[k] = v
+			}
+
+			err := enableOperatorControllerFeature(hv, tt.enabled, tt.feature)
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			actual := hv.GetValues()
+			if !reflect.DeepEqual(actual, tt.expectedVals) {
+				t.Errorf("Expected values %v, got %v", tt.expectedVals, actual)
+			}
+		})
+	}
+}
+
+func TestEnableCatalogdFeature(t *testing.T) {
+	tests := []struct {
+		name         string
+		enabled      bool
+		feature      string
+		initialVals  map[string]interface{}
+		expectedVals map[string]interface{}
+	}{
+		{
+			name:        "enable catalogd feature",
+			enabled:     true,
+			feature:     APIV1MetasHandler,
+			initialVals: make(map[string]interface{}),
+			expectedVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"catalogd": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled": []interface{}{APIV1MetasHandler},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:        "disable catalogd feature",
+			enabled:     false,
+			feature:     APIV1MetasHandler,
+			initialVals: make(map[string]interface{}),
+			expectedVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"catalogd": map[string]interface{}{
+						"features": map[string]interface{}{
+							"disabled": []interface{}{APIV1MetasHandler},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:    "enable catalogd feature removes from disabled",
+			enabled: true,
+			feature: APIV1MetasHandler,
+			initialVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"catalogd": map[string]interface{}{
+						"features": map[string]interface{}{
+							"disabled": []interface{}{APIV1MetasHandler},
+						},
+					},
+				},
+			},
+			expectedVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"catalogd": map[string]interface{}{
+						"features": map[string]interface{}{
+							"disabled": []interface{}{},
+							"enabled":  []interface{}{APIV1MetasHandler},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:    "disable catalogd feature removes from enabled",
+			enabled: false,
+			feature: APIV1MetasHandler,
+			initialVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"catalogd": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled": []interface{}{APIV1MetasHandler},
+						},
+					},
+				},
+			},
+			expectedVals: map[string]interface{}{
+				"options": map[string]interface{}{
+					"catalogd": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled":  []interface{}{},
+							"disabled": []interface{}{APIV1MetasHandler},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hv := helmvalues.NewHelmValues()
+			for k, v := range tt.initialVals {
+				hv.GetValues()[k] = v
+			}
+
+			err := enableCatalogdFeature(hv, tt.enabled, tt.feature)
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			actual := hv.GetValues()
+			if !reflect.DeepEqual(actual, tt.expectedVals) {
+				t.Errorf("Expected values %v, got %v", tt.expectedVals, actual)
+			}
+		})
+	}
+}
