@@ -34,7 +34,11 @@ func (b *Builder) renderHelmTemplate(helmPath, manifestDir string) error {
 		return fmt.Errorf("CurrentFeatureGates failed: %w", err)
 	}
 
-	featureGateValues, err := upstreamFeatureGates(clusterGatesConfig,
+	// Gather feature-gate configuration first, to see if we want to use
+	// the experimental values file.
+	featureGateValues, err := upstreamFeatureGates(
+		helmvalues.NewHelmValues(),
+		clusterGatesConfig,
 		b.Clients.FeatureGateMapper.DownstreamFeatureGates(),
 		b.Clients.FeatureGateMapper.UpstreamForDownstream)
 	if err != nil {
@@ -61,10 +65,18 @@ func (b *Builder) renderHelmTemplate(helmPath, manifestDir string) error {
 		return fmt.Errorf("error from GatherHelmValuesFromFiles: %w", err)
 	}
 
-	// Add the featureGateValues
-	if err := values.AddValues(featureGateValues); err != nil {
-		return fmt.Errorf("error from AddValues: %w", err)
+	// Add the upstreamFeatureGates - this is run a second time to update the existing
+	// list rather than create a new list. Using AddValues() to merge featureGateValues
+	// from above would not allow overriding of enabled/disabled features.
+	values, err = upstreamFeatureGates(
+		values,
+		clusterGatesConfig,
+		b.Clients.FeatureGateMapper.DownstreamFeatureGates(),
+		b.Clients.FeatureGateMapper.UpstreamForDownstream)
+	if err != nil {
+		return err
 	}
+
 	// Log verbosity and proxies are dynamic, so they are not included here.
 	// Feature flags are listed here, and if they change cluster-olm-operator
 	// will resart, as the manifest needs to be regenerated

@@ -2,7 +2,6 @@ package helmvalues
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -94,13 +93,37 @@ func (v *HelmValues) AddListValue(location string, newValue string) error {
 	}
 	if found {
 		if slices.Index(values, newValue) != -1 {
-			return fmt.Errorf("newValue=%q already present in values=%v", newValue, values)
+			// if newValue is already there, then it's been "added"
+			return nil
 		}
 		values = append(values, newValue)
 		slices.Sort(values)
 		return unstructured.SetNestedStringSlice(v.values, values, ss...)
 	}
 	return unstructured.SetNestedStringSlice(v.values, []string{newValue}, ss...)
+}
+
+func (v *HelmValues) RemoveListValue(location string, rmValue string) error {
+	if location == "" {
+		return errors.New("location string has no locations")
+	}
+	ss := strings.Split(location, ".")
+	values, found, err := unstructured.NestedStringSlice(v.values, ss...)
+	if err != nil {
+		return err
+	}
+	if !found {
+		// slice doesn't exist, so rmValue value doesn't exist
+		return nil
+	}
+	idx := slices.Index(values, rmValue)
+	if idx == -1 {
+		// if rmValue is not already there, then it's been "removed"
+		return nil
+	}
+
+	values = append(values[:idx], values[idx+1:]...)
+	return unstructured.SetNestedStringSlice(v.values, values, ss...)
 }
 
 func (v *HelmValues) AddValues(newValues *HelmValues) error {
