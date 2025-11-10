@@ -8,17 +8,17 @@ require (
 	github.com/TwiN/deepmerge v0.2.2
 	github.com/blang/semver/v4 v4.0.0
 	github.com/go-logr/logr v1.4.2
-	github.com/openshift/api v0.0.0-20251021211107-8c9accafe91d
+	github.com/openshift/api v0.0.0-20251106190826-ebe535b08719
 	github.com/openshift/build-machinery-go v0.0.0-20250530140348-dc5b2804eeee
 	github.com/openshift/client-go v0.0.0-20251015124057-db0dee36e235
-	github.com/openshift/library-go v0.0.0-20251021141706-f489e811f030
+	github.com/openshift/library-go v0.0.0-20251107090138-0de9712313a5
 	github.com/operator-framework/catalogd v1.0.0-rc1
 	github.com/operator-framework/helm-operator-plugins v0.7.0
 	github.com/operator-framework/operator-controller v1.0.0-rc1
 	github.com/operator-framework/operator-registry v1.48.0
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/pflag v1.0.6
-	github.com/stretchr/testify v1.11.1
+	github.com/stretchr/testify v1.10.0
 	golang.org/x/net v0.43.0
 	golang.org/x/text v0.29.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -170,11 +170,11 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	k8s.io/apiserver v0.34.1 // indirect
-	k8s.io/cli-runtime v0.34.1 // indirect
+	k8s.io/cli-runtime v0.33.2 // indirect
 	k8s.io/kms v0.34.1 // indirect
 	k8s.io/kube-aggregator v0.34.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20250710124328-f3f2b991d03b // indirect
-	k8s.io/kubectl v0.34.1 // indirect
+	k8s.io/kubectl v0.33.2 // indirect
 	oras.land/oras-go/v2 v2.6.0 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.2 // indirect
 	sigs.k8s.io/json v0.0.0-20241014173422-cfa47c3a1cc8 // indirect
