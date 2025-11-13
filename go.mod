@@ -6,7 +6,7 @@ require (
 	github.com/TwiN/deepmerge v0.2.2
 	github.com/blang/semver/v4 v4.0.0
 	github.com/go-logr/logr v1.4.3
-	github.com/openshift/api v0.0.0-20251111013132-5c461e21bdb7
+	github.com/openshift/api v0.0.0-20251118143053-b6fddd3c8174
 	github.com/openshift/build-machinery-go v0.0.0-20250530140348-dc5b2804eeee
 	github.com/openshift/client-go v0.0.0-20251015124057-db0dee36e235
 	github.com/openshift/library-go v0.0.0-20251107090138-0de9712313a5

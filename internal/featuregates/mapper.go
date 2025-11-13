@@ -23,6 +23,7 @@ const (
 	// WebhookProviderCertManager: This is something that always needs to be disabled downstream
 	WebhookProviderOpenshiftServiceCA = "WebhookProviderOpenshiftServiceCA"
 	WebhookProviderCertManager        = "WebhookProviderCertManager"
+	NewOLMBoxCutterRuntime            = "BoxcutterRuntime"
 )
 
 type MapperInterface interface {
@@ -78,6 +79,9 @@ func NewMapper() *Mapper {
 		},
 		features.FeatureGateNewOLMCatalogdAPIV1Metas: func(v *helmvalues.HelmValues, enabled bool) error {
 			return enableCatalogdFeature(v, enabled, APIV1MetasHandler)
+		},
+		features.FeatureGateNewOLMBoxCutterRuntime: func(v *helmvalues.HelmValues, enabled bool) error {
+			return enableOperatorControllerFeature(v, enabled, NewOLMBoxCutterRuntime)
 		},
 	}
 

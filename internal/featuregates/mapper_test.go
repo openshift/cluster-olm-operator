@@ -34,6 +34,7 @@ func TestMapper_DownstreamFeatureGates(t *testing.T) {
 		features.FeatureGateNewOLMOwnSingleNamespace,
 		features.FeatureGateNewOLMWebhookProviderOpenshiftServiceCA,
 		features.FeatureGateNewOLMCatalogdAPIV1Metas,
+		features.FeatureGateNewOLMBoxCutterRuntime,
 	}
 
 	if len(gates) != len(expectedGates) {
@@ -65,6 +66,12 @@ func TestMapper_UpstreamForDownstream(t *testing.T) {
 		{
 			name:           "valid downstream gate - own single namespace",
 			downstreamGate: features.FeatureGateNewOLMOwnSingleNamespace,
+			enabled:        false,
+			expectFunc:     true,
+		},
+		{
+			name:           "valid downstream gate - boxcutter runtime",
+			downstreamGate: features.FeatureGateNewOLMBoxCutterRuntime,
 			enabled:        false,
 			expectFunc:     true,
 		},
