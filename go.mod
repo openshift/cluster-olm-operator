@@ -2,6 +2,9 @@ module github.com/openshift/cluster-olm-operator
 
 go 1.24.6
 
+// MUST BE REMOVED BEFORE MERGE
+replace github.com/openshift/api => github.com/anik120/openshift-api v0.0.0-20251113203504-11f7307b75ad
+
 require (
 	github.com/TwiN/deepmerge v0.2.2
 	github.com/blang/semver/v4 v4.0.0
