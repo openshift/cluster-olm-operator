@@ -2,6 +2,8 @@ module github.com/openshift/cluster-olm-operator
 
 go 1.24.6
 
+replace github.com/openshift/api => github.com/perdasilva/openshift-api v0.0.0-20251121074804-ebed079396d5
+
 require (
 	github.com/TwiN/deepmerge v0.2.2
 	github.com/blang/semver/v4 v4.0.0
