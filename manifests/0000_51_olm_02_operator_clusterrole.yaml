@@ -297,3 +297,15 @@ rules:
     - list
     - watch
     - delete
+  - apiGroups:
+    - policy
+    resources:
+    - poddisruptionbudgets
+    verbs:
+    - create
+    - update
+    - patch
+    - get
+    - list
+    - watch
+    - delete
