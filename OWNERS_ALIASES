@@ -2,25 +2,20 @@
 aliases:
    # contributors who can approve any PRs in the repo
    operator-runtime-approvers:
-   - everettraven
    - grokspawn
    - joelanford
-   - kevinrizza
    - oceanc80
    - perdasilva
    - tmshort
-   - LalatenduMohanty
+   - jianzhangbjz
 
    # contributors who can review/lgtm any PRs in the repo
    operator-runtime-reviewers:
    - anik120
    - ankitathomas
    - dtfranz
-   - everettraven
    - grokspawn
    - joelanford
-   - kevinrizza
    - oceanc80
    - perdasilva
    - tmshort
-   - LalatenduMohanty
