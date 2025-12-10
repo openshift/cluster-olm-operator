@@ -29,12 +29,12 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
 
+	ocv1 "github.com/operator-framework/operator-controller/api/v1"
+
 	"github.com/openshift/cluster-olm-operator/internal/utils"
 	"github.com/openshift/cluster-olm-operator/pkg/clients"
 	"github.com/openshift/cluster-olm-operator/pkg/controller"
 	"github.com/openshift/cluster-olm-operator/pkg/version"
-
-	catalogdv1 "github.com/operator-framework/catalogd/api/v1"
 )
 
 const (
@@ -100,14 +100,14 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		return fmt.Errorf("unable to retrieve featureSet: %w", err)
 	}
 
-	clusterCatalogGvk := catalogdv1.GroupVersion.WithKind("ClusterCatalog")
+	clusterCatalogGvk := ocv1.GroupVersion.WithKind("ClusterCatalog")
 	cb := controller.Builder{
 		Assets:            assetPath,
 		Clients:           cl,
 		ControllerContext: cc,
 		KnownRESTMappings: map[schema.GroupVersionKind]*meta.RESTMapping{
 			clusterCatalogGvk: {
-				Resource:         catalogdv1.GroupVersion.WithResource("clustercatalogs"),
+				Resource:         ocv1.GroupVersion.WithResource("clustercatalogs"),
 				GroupVersionKind: clusterCatalogGvk,
 				Scope:            meta.RESTScopeRoot,
 			},

@@ -6,14 +6,13 @@ import (
 	"strings"
 	"testing"
 
+	ocv1 "github.com/operator-framework/operator-controller/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-
-	catalogdv1 "github.com/operator-framework/catalogd/api/v1"
 )
 
 func containsError(expected error) func(t *testing.T, err error) {
@@ -145,7 +144,7 @@ func TestDynamicRequiredManifestControllerSync(t *testing.T) {
 				key:         types.NamespacedName{Name: "foo"},
 				managedFunc: func() (bool, error) { return true, nil },
 				objectGetFunc: func(_ types.NamespacedName) (runtime.Object, error) {
-					return nil, apierrors.NewNotFound(catalogdv1.GroupVersion.WithResource("clusterresources").GroupResource(), "foo")
+					return nil, apierrors.NewNotFound(ocv1.GroupVersion.WithResource("clusterresources").GroupResource(), "foo")
 				},
 				shouldUpdateFunc: func(_ []byte, _ runtime.Object) (bool, error) {
 					return true, nil

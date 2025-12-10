@@ -9,10 +9,11 @@ import (
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
-	internalfeatures "github.com/openshift/cluster-olm-operator/internal/featuregates"
-	"github.com/openshift/cluster-olm-operator/pkg/clients"
 	"github.com/stretchr/testify/require"
 	yaml3 "gopkg.in/yaml.v3"
+
+	internalfeatures "github.com/openshift/cluster-olm-operator/internal/featuregates"
+	"github.com/openshift/cluster-olm-operator/pkg/clients"
 )
 
 func TestRenderHelmTemplate(t *testing.T) {

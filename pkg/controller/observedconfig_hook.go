@@ -9,12 +9,13 @@ import (
 	"strings"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
-	"github.com/openshift/cluster-olm-operator/pkg/clients"
 	"github.com/openshift/library-go/pkg/operator/deploymentcontroller"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/klog/v2"
+
+	"github.com/openshift/cluster-olm-operator/pkg/clients"
 )
 
 // UpdateDeploymentObservedConfigHook creates a deployment hook that reads observedConfig

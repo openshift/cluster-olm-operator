@@ -22,7 +22,6 @@ import (
 	operatorv1apply "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 	operatorclient "github.com/openshift/client-go/operator/clientset/versioned"
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
-	internalfeatures "github.com/openshift/cluster-olm-operator/internal/featuregates"
 	"github.com/openshift/library-go/pkg/apiserver/jsonpatch"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
@@ -49,7 +48,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
-	catalogdv1 "github.com/operator-framework/catalogd/api/v1"
+	internalfeatures "github.com/openshift/cluster-olm-operator/internal/featuregates"
 )
 
 const defaultResyncPeriod = 10 * time.Minute
@@ -231,7 +230,7 @@ func (cc *ClusterCatalogClient) Get(key types.NamespacedName) (runtime.Object, e
 
 func NewClusterCatalogClient(dynClient dynamic.Interface) *ClusterCatalogClient {
 	infFact := dynamicinformer.NewDynamicSharedInformerFactory(dynClient, defaultResyncPeriod)
-	clusterCatalogGVR := catalogdv1.GroupVersion.WithResource("clustercatalogs")
+	clusterCatalogGVR := ocv1.GroupVersion.WithResource("clustercatalogs")
 	inf := infFact.ForResource(clusterCatalogGVR)
 
 	return &ClusterCatalogClient{
