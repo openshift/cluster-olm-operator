@@ -4,8 +4,9 @@ import (
 	"errors"
 
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/cluster-olm-operator/pkg/helmvalues"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
+
+	"github.com/openshift/cluster-olm-operator/pkg/helmvalues"
 )
 
 // upstreamFeatureGates builds a set of helm values for the downsteeam feature-gates that are

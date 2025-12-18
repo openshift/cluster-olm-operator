@@ -11,8 +11,6 @@ import (
 	semver "github.com/blang/semver/v4"
 	"github.com/go-logr/logr"
 	operatorv1 "github.com/openshift/api/operator/v1"
-	"github.com/openshift/cluster-olm-operator/internal/utils"
-	"github.com/openshift/cluster-olm-operator/pkg/clients"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
@@ -25,6 +23,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/klog/v2"
+
+	"github.com/openshift/cluster-olm-operator/internal/utils"
+	"github.com/openshift/cluster-olm-operator/pkg/clients"
 )
 
 const (

@@ -306,8 +306,6 @@ github.com/openshift/library-go v0.0.0-20251107090138-0de9712313a5 h1:Gq8jCFgSri
 github.com/openshift/library-go v0.0.0-20251107090138-0de9712313a5/go.mod h1:OlFFws1AO51uzfc48MsStGE4SFMWlMZD0+f5a/zCtKI=
 github.com/operator-framework/api v0.36.0 h1:6+duRhamCvB540JbvNp/1+Pot7luff7HqdAOm9bAntg=
 github.com/operator-framework/api v0.36.0/go.mod h1:QSmHMx8XpGsNWvjU5CUelVZC916VLp/TZhfYvGKpghM=
-github.com/operator-framework/catalogd v1.1.0 h1:mu2DYL5mpREEAAP+uPG+CMSsfsJkgrIasgLRG8nvwJg=
-github.com/operator-framework/catalogd v1.1.0/go.mod h1:8Je9CqMPwhNgRoqGX5OPsLYHsEoTDvPnELLLKRw1RHE=
 github.com/operator-framework/helm-operator-plugins v0.8.0 h1:0f6HOQC5likkf0b/OvGvw7nhDb6h8Cj5twdCNjwNzMc=
 github.com/operator-framework/helm-operator-plugins v0.8.0/go.mod h1:Sc+8bE38xTCgCChBUvtq/PxatEg9fAypr7S5iAw8nlA=
 github.com/operator-framework/operator-controller v1.5.1 h1:J3xdRHzh9ajuKt/i1fWxoOLUf3kMpaOnGf1XNZ6+Klg=

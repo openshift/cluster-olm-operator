@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
+
 	"github.com/openshift/cluster-olm-operator/pkg/controller"
 )
 
