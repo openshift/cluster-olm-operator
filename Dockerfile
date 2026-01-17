@@ -3,7 +3,7 @@ WORKDIR /build
 COPY . .
 RUN make build
 
-FROM registry.ci.openshift.org/ocp/4.22:base-rhel9
+FROM registry.ci.openshift.org/ocp/4.22:base-rhel9-minimal
 
 COPY --from=builder /build/bin/cluster-olm-operator /
 COPY manifests /manifests
