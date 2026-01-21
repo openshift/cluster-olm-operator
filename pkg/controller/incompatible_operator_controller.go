@@ -69,6 +69,7 @@ func (c *incompatibleOperatorController) sync(ctx context.Context, _ factory.Syn
 	var updateStatusFn v1helpers.UpdateStatusFunc
 	incompatibleOperators, err := c.getIncompatibleOperators()
 	if len(incompatibleOperators) > 0 {
+		// TODO(4.23): Update this message when main becomes 4.23 development
 		message := fmt.Sprintf("Found ClusterExtensions that require upgrades prior to upgrading cluster to version 4.23 or 5.0: %s.", strings.Join(incompatibleOperators, ","))
 		if err != nil {
 			message += fmt.Sprintf("\n Additionally the following errors were encountered while getting extension metadata: %s", err.Error())
