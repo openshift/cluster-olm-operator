@@ -4,6 +4,9 @@ go 1.22
 
 toolchain go1.22.1
 
+// Required to address CVEs: https://issues.redhat.com/browse/OCPBUGS-68169 and https://issues.redhat.com/browse/OCPBUGS-68168
+replace github.com/sirupsen/logrus => github.com/sirupsen/logrus v1.9.3
+
 require (
 	github.com/openshift/api v0.0.0-20240424142232-29a704bf5aa2
 	github.com/openshift/build-machinery-go v0.0.0-20231128094528-1e9b1b0595c8
