@@ -76,6 +76,10 @@ spec:
           value: quay.io/openshift/origin-olm-catalogd:latest
         - name: OPERATOR_CONTROLLER_IMAGE
           value: quay.io/openshift/origin-olm-operator-controller:latest
+        - name: RELEASE_VERSION
+          value: "foo"
+        - name: RELEASE_VERSION2
+          value: "0.0.1-snapshot"
         resources:
           requests:
             cpu: 10m
