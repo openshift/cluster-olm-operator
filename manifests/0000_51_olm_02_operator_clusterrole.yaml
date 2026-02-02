@@ -262,6 +262,7 @@ rules:
     - olm.operatorframework.io
     resources:
     - clusterextensions
+    - clusterextensionrevisions
     verbs:
     - get
     - list
