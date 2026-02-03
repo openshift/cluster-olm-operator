@@ -12,6 +12,7 @@ import (
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 
 	_ "github.com/openshift/api/operator/v1/zz_generated.crd-manifests"
+	configv1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/loglevel"
@@ -209,7 +210,32 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		versionGetter,
 		cc.EventRecorder.ForComponent("olm"),
 		cc.Clock,
-	)
+	).WithBeforeStatusUpdateHook(func(original *configv1.ClusterOperator, mutated *configv1.ClusterOperator) error {
+		releaseVersion := os.Getenv("RELEASE_VERSION")
+		if releaseVersion == "" {
+			return nil
+		}
+
+		// Compare RELEASE_VERSION against original versions from etcd (before syncStatusVersions updated them)
+		// This correctly detects version changes by comparing target version against current state
+		for _, v := range original.Status.Versions {
+			if v.Version == releaseVersion {
+				// Version matches - stable state, not upgrading
+				return nil
+			}
+		}
+
+		// Version mismatch happened so set Progressing=True
+		klog.Infof("Version change detected, setting Progressing=True for version %s", releaseVersion)
+		configv1helpers.SetStatusCondition(&mutated.Status.Conditions, configv1.ClusterOperatorStatusCondition{
+			Type:    configv1.OperatorProgressing,
+			Status:  configv1.ConditionTrue,
+			Reason:  "UpgradeInProgress",
+			Message: fmt.Sprintf("Progressing towards operator version %s", releaseVersion),
+		}, cc.Clock)
+
+		return nil
+	})
 
 	operatorLoggingController := loglevel.NewClusterOperatorLoggingController(cl.OperatorClient, cc.EventRecorder.ForComponent("ClusterOLMOperatorLoggingController"))
 

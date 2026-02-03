@@ -68,6 +68,8 @@ spec:
         env:
         - name: OPERATOR_NAME
           value: cluster-olm-operator
+        - name: RELEASE_VERSION
+          value: 0.0.1-snapshot
         - name: OPERATOR_IMAGE_VERSION
           value: 0.0.1-snapshot
         - name: KUBE_RBAC_PROXY_IMAGE
