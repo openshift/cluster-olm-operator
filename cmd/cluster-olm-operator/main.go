@@ -11,6 +11,8 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 
 	_ "github.com/openshift/api/operator/v1/zz_generated.crd-manifests"
+	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
+	configv1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/loglevel"
@@ -86,6 +88,43 @@ func newStartCommand() *cobra.Command {
 	cmd.Use = "start"
 	cmd.Short = "Start the Cluster OLM Operator"
 	return cmd
+}
+
+// we need to wrap the configclient that gets passed to NewClusterOperatorStatusController.
+// The wrapper will then be able to  tweak the ClusterOperator object before writing to etcd.
+
+// configClientWrapper wraps ConfigV1Interface to intercept ClusterOperator status updates
+type configClientWrapper struct {
+	configv1client.ConfigV1Interface
+	coClient       configv1client.ClusterOperatorInterface
+	releaseVersion string
+	clock          clock.PassiveClock
+}
+
+// ClusterOperators returns wrapped ClusterOperatorInterface
+func (w *configClientWrapper) ClusterOperators() configv1client.ClusterOperatorInterface {
+	return &coWrapper{w.coClient, w.releaseVersion, w.clock}
+}
+
+// coWrapper wraps ClusterOperatorInterface to intercept UpdateStatus calls
+type coWrapper struct {
+	configv1client.ClusterOperatorInterface
+	releaseVersion string
+	clock          clock.PassiveClock
+}
+
+// here we add version detection logic
+func (w *coWrapper) UpdateStatus(ctx context.Context, co *configv1.ClusterOperator, opts metav1.UpdateOptions) (*configv1.ClusterOperator, error) {
+	// TODO: Only apply logic for olm ClusterOperator
+	if w.releaseVersion != "" {
+		// TODO: Get current ClusterOperator to compare versions
+		// Check if RELEASE_VERSION exists in ClusterOperator.Status.Versions
+		// If not found, then we know we are in an upgrade.
+		// TODO: When version change detected, set Progressing=True:
+	}
+
+	// call real UpdateStatus with tweaked resource
+	return w.ClusterOperatorInterface.UpdateStatus(ctx, co, opts)
 }
 
 func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error {
@@ -204,10 +243,19 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	}
 	relatedObjects = append(relatedObjects, manifestRelatedObjects...)
 
+	// create wrapper here and pass it instead of raw configclient
+	wrappedConfigClient := &configClientWrapper{
+		ConfigV1Interface: cl.ConfigClient.ConfigV1(),
+		coClient:          cl.ConfigClient.ConfigV1().ClusterOperators(),
+		releaseVersion:    os.Getenv("RELEASE_VERSION"),
+		clock:             cc.Clock,
+	}
+
+	// Pass wrapped client instead of previous client here
 	clusterOperatorController := status.NewClusterOperatorStatusController(
 		"olm",
 		relatedObjects,
-		cl.ConfigClient.ConfigV1(),
+		wrappedConfigClient, // wrapper instead of cl.ConfigClient.ConfigV1()
 		cl.ConfigInformerFactory.Config().V1().ClusterOperators(),
 		cl.OperatorClient,
 		versionGetter,
