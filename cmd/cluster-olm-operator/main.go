@@ -90,9 +90,6 @@ func newStartCommand() *cobra.Command {
 	return cmd
 }
 
-// we need to wrap the configclient that gets passed to NewClusterOperatorStatusController.
-// The wrapper will then be able to  tweak the ClusterOperator object before writing to etcd.
-
 // configClientWrapper wraps ConfigV1Interface to intercept ClusterOperator status updates
 type configClientWrapper struct {
 	configv1client.ConfigV1Interface
@@ -113,17 +110,28 @@ type coWrapper struct {
 	clock          clock.PassiveClock
 }
 
-// here we add version detection logic
 func (w *coWrapper) UpdateStatus(ctx context.Context, co *configv1.ClusterOperator, opts metav1.UpdateOptions) (*configv1.ClusterOperator, error) {
-	// TODO: Only apply logic for olm ClusterOperator
 	if w.releaseVersion != "" {
-		// TODO: Get current ClusterOperator to compare versions
-		// Check if RELEASE_VERSION exists in ClusterOperator.Status.Versions
-		// If not found, then we know we are in an upgrade.
-		// TODO: When version change detected, set Progressing=True:
+		// Get current ClusterOperator to compare versions
+		if original, err := w.ClusterOperatorInterface.Get(ctx, co.Name, metav1.GetOptions{}); err == nil {
+			// Check if RELEASE_VERSION exists in ClusterOperator.Status.Versions
+			for _, v := range original.Status.Versions {
+				if v.Version == w.releaseVersion {
+					// Version matches, and so we are not in an upgrade
+					return w.ClusterOperatorInterface.UpdateStatus(ctx, co, opts)
+				}
+			}
+			// If RELEASE_VERSION not found, then we are in an upgrade, and so set Progressing to True
+			klog.Infof("Version change detected, setting Progressing=True for version %s", w.releaseVersion)
+			configv1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
+				Type:    configv1.OperatorProgressing,
+				Status:  configv1.ConditionTrue,
+				Reason:  "UpgradeInProgress",
+				Message: fmt.Sprintf("Progressing towards operator version %s", w.releaseVersion),
+			}, w.clock)
+		}
 	}
 
-	// call real UpdateStatus with tweaked resource
 	return w.ClusterOperatorInterface.UpdateStatus(ctx, co, opts)
 }
 
@@ -251,7 +259,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		clock:             cc.Clock,
 	}
 
-	// Pass wrapped client instead of previous client here
+	// Pass wrapped client
 	clusterOperatorController := status.NewClusterOperatorStatusController(
 		"olm",
 		relatedObjects,
