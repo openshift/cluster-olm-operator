@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -28,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/klog/v2"
 
@@ -70,51 +72,24 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 
 		log.Info("Iterating through manifests", "directory", manifestDir)
 
-		if err := filepath.WalkDir(manifestDir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-
-			if d.IsDir() {
-				return nil
-			}
-			if filepath.Ext(path) != ".yaml" && filepath.Ext(path) != ".yml" {
-				return nil
-			}
-
+		if err := WalkYAMLManifestsDir(manifestDir, func(path string, manifest *unstructured.Unstructured, manifestData []byte) error {
 			log.Info("Processing YAML", "file", path)
 
-			manifestData, err := os.ReadFile(path)
+			objReference, err := ToObjectReference(manifest, b.Clients.RESTMapper, b.KnownRESTMappings)
 			if err != nil {
-				errs = append(errs, fmt.Errorf("error reading assets file %q: %w", path, err))
-				return nil
+				return fmt.Errorf("failed gvk lookup for file %s: %w", path, err)
 			}
 
-			var manifest unstructured.Unstructured
-			if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(manifestData), 4096).Decode(&manifest); err != nil {
-				errs = append(errs, fmt.Errorf("error parsing manifest for file %q: %w", path, err))
+			if objReference == nil {
+				// empty manifest, ignore
 				return nil
 			}
+			relatedObjects = append(relatedObjects, *objReference)
 
 			manifestGVK := manifest.GroupVersionKind()
-			// check our known mappings first. If there isn't one, fallback to discovery
-			restMapping, ok := b.KnownRESTMappings[manifestGVK]
-			if !ok {
-				restMapping, err = b.Clients.RESTMapper.RESTMapping(manifestGVK.GroupKind(), manifestGVK.Version)
-				if err != nil {
-					errs = append(errs, fmt.Errorf("error looking up RESTMapping for file %q, gvk %v: %w", path, manifestGVK, err))
-					return nil
-				}
-			}
-			relatedObjects = append(relatedObjects, configv1.ObjectReference{
-				Group:     restMapping.GroupVersionKind.Group,
-				Resource:  restMapping.Resource.Resource,
-				Namespace: manifest.GetNamespace(),
-				Name:      manifest.GetName(),
-			})
 
 			if manifestGVK.Kind == "Deployment" && manifestGVK.Group == "apps" {
-				controllerName := controllerNameForObject(namePrefix, &manifest)
+				controllerName := controllerNameForObject(namePrefix, manifest)
 				deploymentControllers[controllerName] = deploymentcontroller.NewDeploymentController(
 					controllerName,
 					manifestData,
@@ -136,7 +111,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 			}
 
 			if manifestGVK.Kind == "ClusterCatalog" && manifestGVK.Group == catalogdv1.GroupVersion.Group {
-				controllerName := controllerNameForObject(namePrefix, &manifest)
+				controllerName := controllerNameForObject(namePrefix, manifest)
 				clusterCatalogControllers[controllerName] = NewDynamicRequiredManifestController(
 					controllerName,
 					manifestData,
@@ -258,4 +233,87 @@ func replaceVerbosityHook(placeholder string) deploymentcontroller.ManifestHookF
 		newDeployment := replacer.Replace(string(deployment))
 		return []byte(newDeployment), nil
 	}
+}
+
+type WalkManifestDirFunc func(path string, manifest *unstructured.Unstructured, rawManifest []byte) error
+
+// WalkYAMLManifestsDir parses all YAML manifests nested within the specified directory
+// and calls fn on any non-empty, valid yaml manifests for kubernetes resources found.
+// fn is called for each resource in a parsed file, and the aggregated list of errors
+// is provided once the whole filetree rooted at dir is parsed. The files are parsed in
+// lexical order, with the manifests within each file parsed in the order they have within
+// the file.
+func WalkYAMLManifestsDir(dir string, fn ...WalkManifestDirFunc) error {
+	errs := []error{}
+	if err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+		if filepath.Ext(path) != ".yaml" && filepath.Ext(path) != ".yml" {
+			return nil
+		}
+
+		manifestData, err := os.ReadFile(path)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("error reading assets file %q: %w", path, err))
+			return nil
+		}
+
+		decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(manifestData), 4096)
+		for {
+			var manifest unstructured.Unstructured
+			if err := decoder.Decode(&manifest); err != nil {
+				if !errors.Is(err, io.EOF) {
+					errs = append(errs, fmt.Errorf("error parsing manifest for file %q: %w", path, err))
+				}
+				return nil
+			}
+
+			manifestGVK := manifest.GroupVersionKind()
+			if manifestGVK.Empty() {
+				// ignore comment-only sections of yaml
+				continue
+			}
+
+			for _, f := range fn {
+				if err := f(path, &manifest, manifestData); err != nil {
+					errs = append(errs, err)
+				}
+			}
+		}
+	}); err != nil {
+		return err
+	}
+
+	return utilerrors.NewAggregate(errs)
+}
+
+// ToObjectReference converts an unstructured Object into an ObjectReference with the provided restMapper.
+// The Group/Resource mapping may be overridden by providing a mapping for the gvk in the knownRestMappings map.
+func ToObjectReference(o *unstructured.Unstructured, restMapper meta.RESTMapper, knownRESTMappings map[schema.GroupVersionKind]*meta.RESTMapping) (*configv1.ObjectReference, error) {
+	objGVK := o.GroupVersionKind()
+	if objGVK.Empty() {
+		return nil, nil
+	}
+
+	var err error
+	// check our known mappings first. If there isn't one, fallback to discovery
+	restMapping, ok := knownRESTMappings[objGVK]
+	if !ok {
+		restMapping, err = restMapper.RESTMapping(objGVK.GroupKind(), objGVK.Version)
+		if err != nil {
+			return nil, fmt.Errorf("error looking up RESTMapping for gvk %v: %w", objGVK, err)
+		}
+	}
+
+	return &configv1.ObjectReference{
+		Group:     restMapping.GroupVersionKind.Group,
+		Resource:  restMapping.Resource.Resource,
+		Namespace: o.GetNamespace(),
+		Name:      o.GetName(),
+	}, nil
 }

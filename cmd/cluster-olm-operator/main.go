@@ -9,7 +9,6 @@ import (
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
-	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 
 	_ "github.com/openshift/api/operator/v1/zz_generated.crd-manifests"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
@@ -21,6 +20,7 @@ import (
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -40,6 +40,7 @@ import (
 const (
 	olmProxyController = "OLMProxyController"
 	assetPath          = "/operand-assets"
+	manifestsPath      = "/manifests"
 )
 
 func main() {
@@ -192,13 +193,16 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	versionGetter := status.NewVersionGetter()
 	versionGetter.SetVersion("operator", status.VersionForOperatorFromEnv())
 
-	// Add OLM resource and openshift-cluster-olm-operator namespace to relatedObjects
-	// to ensure that must-gather picks them up.
-	// Note: These two resources are also hard-coded in the ClusterOperator manifest. This way,
+	// Add all resources to relatedObjects to ensure that must-gather picks them up.
+	// Note: These resources are also hard-coded in the ClusterOperator manifest. This way,
 	// must-gather will pick them up in case of catastrophic failure before we cluster-olm-operator
 	// gets a chance to dynamically update the relatedObjects. Thus, making the pod logs accessible
 	// for troubleshooting in the must-gather.
-	relatedObjects = append(relatedObjects, newOLMObjectReference(), newNamespaceObjectReference())
+	manifestRelatedObjects, err := parseClusterOperatorManifestObjectReferences(manifestsPath, cl.RESTMapper)
+	if err != nil {
+		return err
+	}
+	relatedObjects = append(relatedObjects, manifestRelatedObjects...)
 
 	clusterOperatorController := status.NewClusterOperatorStatusController(
 		"olm",
@@ -250,22 +254,31 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	return nil
 }
 
-// newOLMObjectReference creates a configv1.ObjectReference for
-// the cluster scoped OLM resources
-func newOLMObjectReference() configv1.ObjectReference {
-	return configv1.ObjectReference{
-		Group:    operatorv1alpha1.GroupName,
-		Resource: "olms",
-		Name:     "cluster",
-	}
-}
+// parseClusterOperatorManifestObjectReferences parses the manifests directory for olm ClusterOperator
+// and provides the ObjectReferences of all resources except the ClusterOperator manifest.
+func parseClusterOperatorManifestObjectReferences(manifestDirPath string, restMapper meta.RESTMapper) ([]configv1.ObjectReference, error) {
+	relatedObjects := []configv1.ObjectReference{}
+	if err := controller.WalkYAMLManifestsDir(manifestDirPath, func(path string, manifest *unstructured.Unstructured, _ []byte) error {
+		objReference, err := controller.ToObjectReference(manifest, restMapper, nil)
+		if err != nil {
+			return fmt.Errorf("failed gvk lookup for file %s: %w", path, err)
+		}
 
-// newNamespaceObjectReferences creates a configv1.ObjectReference for
-// the OCP namespaces where this operator is installed: openshift-cluster-olm-operator
-func newNamespaceObjectReference() configv1.ObjectReference {
-	return configv1.ObjectReference{
-		Group:    "",
-		Resource: "namespaces",
-		Name:     "openshift-cluster-olm-operator",
+		if objReference == nil {
+			// empty manifest, ignore
+			return nil
+		}
+
+		// Do not add the ClusterOperator to its relatedObjects
+		if objReference.Group == configv1.GroupName && objReference.Resource == "clusteroperators" {
+			return nil
+		}
+
+		relatedObjects = append(relatedObjects, *objReference)
+		return nil
+	}); err != nil {
+		return nil, err
 	}
+
+	return relatedObjects, nil
 }
