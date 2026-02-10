@@ -11,8 +11,6 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 
 	_ "github.com/openshift/api/operator/v1/zz_generated.crd-manifests"
-	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
-	configv1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/loglevel"
@@ -88,51 +86,6 @@ func newStartCommand() *cobra.Command {
 	cmd.Use = "start"
 	cmd.Short = "Start the Cluster OLM Operator"
 	return cmd
-}
-
-// configClientWrapper wraps ConfigV1Interface to intercept ClusterOperator status updates
-type configClientWrapper struct {
-	configv1client.ConfigV1Interface
-	coClient       configv1client.ClusterOperatorInterface
-	releaseVersion string
-	clock          clock.PassiveClock
-}
-
-// ClusterOperators returns wrapped ClusterOperatorInterface
-func (w *configClientWrapper) ClusterOperators() configv1client.ClusterOperatorInterface {
-	return &coWrapper{w.coClient, w.releaseVersion, w.clock}
-}
-
-// coWrapper wraps ClusterOperatorInterface to intercept UpdateStatus calls
-type coWrapper struct {
-	configv1client.ClusterOperatorInterface
-	releaseVersion string
-	clock          clock.PassiveClock
-}
-
-func (w *coWrapper) UpdateStatus(ctx context.Context, co *configv1.ClusterOperator, opts metav1.UpdateOptions) (*configv1.ClusterOperator, error) {
-	if w.releaseVersion != "" {
-		// Get current ClusterOperator to compare versions
-		if original, err := w.ClusterOperatorInterface.Get(ctx, co.Name, metav1.GetOptions{}); err == nil {
-			// Check if RELEASE_VERSION exists in ClusterOperator.Status.Versions
-			for _, v := range original.Status.Versions {
-				if v.Version == w.releaseVersion {
-					// Version matches, and so we are not in an upgrade
-					return w.ClusterOperatorInterface.UpdateStatus(ctx, co, opts)
-				}
-			}
-			// If RELEASE_VERSION not found, then we are in an upgrade, and so set Progressing to True
-			klog.Infof("Version change detected, setting Progressing=True for version %s", w.releaseVersion)
-			configv1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
-				Type:    configv1.OperatorProgressing,
-				Status:  configv1.ConditionTrue,
-				Reason:  "UpgradeInProgress",
-				Message: fmt.Sprintf("Progressing towards operator version %s", w.releaseVersion),
-			}, w.clock)
-		}
-	}
-
-	return w.ClusterOperatorInterface.UpdateStatus(ctx, co, opts)
 }
 
 func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error {
@@ -252,12 +205,11 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	relatedObjects = append(relatedObjects, manifestRelatedObjects...)
 
 	// create wrapper here and pass it instead of raw configclient
-	wrappedConfigClient := &configClientWrapper{
-		ConfigV1Interface: cl.ConfigClient.ConfigV1(),
-		coClient:          cl.ConfigClient.ConfigV1().ClusterOperators(),
-		releaseVersion:    os.Getenv("RELEASE_VERSION"),
-		clock:             cc.Clock,
-	}
+	wrappedConfigClient := clients.NewConfigClientWrapper(
+		cl.ConfigClient.ConfigV1(),
+		os.Getenv("RELEASE_VERSION"),
+		cc.Clock,
+	)
 
 	// Pass wrapped client
 	clusterOperatorController := status.NewClusterOperatorStatusController(
