@@ -9,6 +9,7 @@ import (
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/cluster-olm-operator/internal/versionutils"
 
 	_ "github.com/openshift/api/operator/v1/zz_generated.crd-manifests"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
@@ -31,7 +32,6 @@ import (
 
 	ocv1 "github.com/operator-framework/operator-controller/api/v1"
 
-	"github.com/openshift/cluster-olm-operator/internal/utils"
 	"github.com/openshift/cluster-olm-operator/pkg/clients"
 	"github.com/openshift/cluster-olm-operator/pkg/controller"
 	"github.com/openshift/cluster-olm-operator/pkg/version"
@@ -149,7 +149,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	}
 
 	operatorImageVersion := status.VersionForOperatorFromEnv()
-	currentOCPMinorVersion, err := utils.GetCurrentOCPMinorVersion(operatorImageVersion)
+	currentOCPMinorVersion, err := versionutils.GetCurrentOCPMinorVersion(operatorImageVersion)
 	if err != nil {
 		return err
 	}

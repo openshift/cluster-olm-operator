@@ -39,10 +39,10 @@ type Mapper struct {
 }
 
 func enableFeature(v *helmvalues.HelmValues, addList, removeList, feature string) error {
-	var errs []error
-	errs = append(errs, v.RemoveListValue(removeList, feature))
-	errs = append(errs, v.AddListValue(addList, feature))
-	return errors.Join(errs...)
+	return errors.Join(
+		v.RemoveListValue(removeList, feature),
+		v.AddListValue(addList, feature),
+	)
 }
 func enableCatalogdFeature(v *helmvalues.HelmValues, enabled bool, feature string) error {
 	if enabled {
@@ -70,11 +70,11 @@ func NewMapper() *Mapper {
 			return enableOperatorControllerFeature(v, enabled, SingleOwnNamespaceInstallSupport)
 		},
 		features.FeatureGateNewOLMWebhookProviderOpenshiftServiceCA: func(v *helmvalues.HelmValues, enabled bool) error {
-			var errs []error
-			errs = append(errs, enableOperatorControllerFeature(v, enabled, WebhookProviderOpenshiftServiceCA))
-			// Always disable WebhookProviderCertManager
-			errs = append(errs, enableOperatorControllerFeature(v, false, WebhookProviderCertManager))
-			return errors.Join(errs...)
+			return errors.Join(
+				enableOperatorControllerFeature(v, enabled, WebhookProviderOpenshiftServiceCA),
+				// Always disable WebhookProviderCertManager
+				enableOperatorControllerFeature(v, false, WebhookProviderCertManager),
+			)
 		},
 		features.FeatureGateNewOLMCatalogdAPIV1Metas: func(v *helmvalues.HelmValues, enabled bool) error {
 			return enableCatalogdFeature(v, enabled, APIV1MetasHandler)
