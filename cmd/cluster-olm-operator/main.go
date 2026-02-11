@@ -204,10 +204,18 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	}
 	relatedObjects = append(relatedObjects, manifestRelatedObjects...)
 
+	// create wrapper here and pass it instead of raw configclient
+	wrappedConfigClient := clients.NewConfigClientWrapper(
+		cl.ConfigClient.ConfigV1(),
+		os.Getenv("RELEASE_VERSION"),
+		cc.Clock,
+	)
+
+	// Pass wrapped client
 	clusterOperatorController := status.NewClusterOperatorStatusController(
 		"olm",
 		relatedObjects,
-		cl.ConfigClient.ConfigV1(),
+		wrappedConfigClient, // wrapper instead of cl.ConfigClient.ConfigV1()
 		cl.ConfigInformerFactory.Config().V1().ClusterOperators(),
 		cl.OperatorClient,
 		versionGetter,
