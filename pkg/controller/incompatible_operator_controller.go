@@ -24,7 +24,7 @@ import (
 	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/klog/v2"
 
-	"github.com/openshift/cluster-olm-operator/internal/utils"
+	"github.com/openshift/cluster-olm-operator/internal/versionutils"
 	"github.com/openshift/cluster-olm-operator/pkg/clients"
 )
 
@@ -156,7 +156,7 @@ func (c *incompatibleOperatorController) getIncompatibleOperators() ([]string, e
 		for _, p := range props {
 			if p.Type == maxOpenShiftVersionProperty {
 				numMaxOCPProps++
-				maxOCPVersion, err := utils.ToAllowedSemver(p.Value)
+				maxOCPVersion, err := versionutils.ToAllowedSemver(p.Value)
 				if err != nil {
 					err = fmt.Errorf("error converting to semver for version %s: %v", string(p.Value), err)
 					logger.Info(err.Error())
@@ -173,7 +173,7 @@ func (c *incompatibleOperatorController) getIncompatibleOperators() ([]string, e
 				// 1. maxOCPVersion is 4.18, currentOCPMinorVersion is 4.17 => compatible
 				// 2. maxOCPVersion is 4.18, currentOCPMinorVersion is 4.18 => incompatible
 				// 3. maxOCPVersion is 4.18, currentOCPMinorVersion is 4.19 => incompatible
-				if !utils.IsOperatorMaxOCPVersionCompatibleWithCluster(*maxOCPVersion, *c.currentOCPMinorVersion) {
+				if !versionutils.IsOperatorMaxOCPVersionCompatibleWithCluster(*maxOCPVersion, *c.currentOCPMinorVersion) {
 					// Incompatible
 					incompatibleOperators = append(incompatibleOperators, fmt.Sprintf("bundle %q for ClusterExtension %q", rel.Labels[bundleNameKey], name))
 				}

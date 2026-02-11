@@ -168,8 +168,8 @@ func (b *Builder) UseExperimentalFeatureSet() bool {
 }
 
 func (b *Builder) CurrentFeatureGates() (featuregates.FeatureGate, error) {
-	enabledFeatures := make([]configv1.FeatureGateName, 10)
-	disabledFeatures := make([]configv1.FeatureGateName, 10)
+	enabledFeatures := make([]configv1.FeatureGateName, 0, 10)
+	disabledFeatures := make([]configv1.FeatureGateName, 0, 10)
 	for _, featureGateValues := range b.FeatureGate.Status.FeatureGates {
 		// We don't check featureGateValues.Version... but perhaps we should
 		for _, enabled := range featureGateValues.Enabled {
