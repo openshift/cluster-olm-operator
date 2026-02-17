@@ -51,21 +51,23 @@ func (w *coWrapper) UpdateStatus(ctx context.Context, co *configv1.ClusterOperat
 			return nil, err
 		}
 
-		// Check if RELEASE_VERSION exists in ClusterOperator.Status.Versions
+		// Check if RELEASE_VERSION exists in ClusterOperator.Status.Versions with name "operator"
 		for _, v := range original.Status.Versions {
-			if v.Version == w.releaseVersion {
-				// Version matches, and so we are not in an upgrade
+			if v.Name == "operator" && v.Version == w.releaseVersion {
+				// Operator version matches, and so we are not in an upgrade
 				return w.ClusterOperatorInterface.UpdateStatus(ctx, co, opts)
 			}
 		}
-		// If RELEASE_VERSION not found, then we are in an upgrade, and so set Progressing to True
-		klog.Infof("Version change detected, setting Progressing=True for version %s", w.releaseVersion)
-		configv1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
-			Type:    configv1.OperatorProgressing,
-			Status:  configv1.ConditionTrue,
-			Reason:  "UpgradeInProgress",
-			Message: fmt.Sprintf("Progressing towards operator version %s", w.releaseVersion),
-		}, w.clock)
+		// If RELEASE_VERSION not found and Status.Versions is not empty, then we are in an upgrade
+		if len(original.Status.Versions) > 0 {
+			klog.V(4).Infof("Version change detected, setting Progressing=True for version %s", w.releaseVersion)
+			configv1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
+				Type:    configv1.OperatorProgressing,
+				Status:  configv1.ConditionTrue,
+				Reason:  "UpgradeInProgress",
+				Message: fmt.Sprintf("Progressing towards operator version %s", w.releaseVersion),
+			}, w.clock)
+		}
 	}
 
 	return w.ClusterOperatorInterface.UpdateStatus(ctx, co, opts)
