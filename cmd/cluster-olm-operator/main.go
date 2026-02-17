@@ -203,6 +203,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	// create wrapper here and pass it instead of raw configclient
 	wrappedConfigClient := clients.NewConfigClientWrapper(
 		cl.ConfigClient.ConfigV1(),
+		cl.ConfigInformerFactory.Config().V1().ClusterOperators().Lister(),
 		os.Getenv("RELEASE_VERSION"),
 		cc.Clock,
 	)
