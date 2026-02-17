@@ -6,6 +6,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
+	configv1listers "github.com/openshift/client-go/config/listers/config/v1"
 	configv1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
@@ -16,15 +17,17 @@ import (
 type ConfigClientWrapper struct {
 	configv1client.ConfigV1Interface
 	coClient       configv1client.ClusterOperatorInterface
+	coLister       configv1listers.ClusterOperatorLister
 	releaseVersion string
 	clock          clock.PassiveClock
 }
 
 // NewConfigClientWrapper creates a new ConfigClientWrapper
-func NewConfigClientWrapper(configClient configv1client.ConfigV1Interface, releaseVersion string, clock clock.PassiveClock) *ConfigClientWrapper {
+func NewConfigClientWrapper(configClient configv1client.ConfigV1Interface, coLister configv1listers.ClusterOperatorLister, releaseVersion string, clock clock.PassiveClock) *ConfigClientWrapper {
 	return &ConfigClientWrapper{
 		ConfigV1Interface: configClient,
 		coClient:          configClient.ClusterOperators(),
+		coLister:          coLister,
 		releaseVersion:    releaseVersion,
 		clock:             clock,
 	}
@@ -32,12 +35,13 @@ func NewConfigClientWrapper(configClient configv1client.ConfigV1Interface, relea
 
 // ClusterOperators returns wrapped ClusterOperatorInterface
 func (w *ConfigClientWrapper) ClusterOperators() configv1client.ClusterOperatorInterface {
-	return &coWrapper{w.coClient, w.releaseVersion, w.clock}
+	return &coWrapper{w.coClient, w.coLister, w.releaseVersion, w.clock}
 }
 
 // coWrapper wraps ClusterOperatorInterface to intercept UpdateStatus calls
 type coWrapper struct {
 	configv1client.ClusterOperatorInterface
+	coLister       configv1listers.ClusterOperatorLister
 	releaseVersion string
 	clock          clock.PassiveClock
 }
@@ -45,9 +49,10 @@ type coWrapper struct {
 // UpdateStatus intercepts status updates to detect version changes and set Progressing=True during upgrades
 func (w *coWrapper) UpdateStatus(ctx context.Context, co *configv1.ClusterOperator, opts metav1.UpdateOptions) (*configv1.ClusterOperator, error) {
 	if w.releaseVersion != "" {
-		// Get current ClusterOperator to compare versions
-		original, err := w.ClusterOperatorInterface.Get(ctx, co.Name, metav1.GetOptions{})
+		// Get current ClusterOperator from cache to compare versions
+		original, err := w.coLister.Get(co.Name)
 		if err != nil {
+			// Return error to trigger requeue - the controller will retry
 			return nil, err
 		}
 

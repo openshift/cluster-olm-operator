@@ -7,6 +7,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/clock"
 )
 
@@ -16,12 +17,21 @@ type fakeClusterOperatorClient struct {
 	co *configv1.ClusterOperator
 }
 
-func (f *fakeClusterOperatorClient) Get(ctx context.Context, name string, opts metav1.GetOptions) (*configv1.ClusterOperator, error) {
-	return f.co, nil
-}
-
 func (f *fakeClusterOperatorClient) UpdateStatus(ctx context.Context, co *configv1.ClusterOperator, opts metav1.UpdateOptions) (*configv1.ClusterOperator, error) {
 	return co, nil
+}
+
+// fakeClusterOperatorLister implements a simple lister for testing
+type fakeClusterOperatorLister struct {
+	co *configv1.ClusterOperator
+}
+
+func (f *fakeClusterOperatorLister) List(selector labels.Selector) ([]*configv1.ClusterOperator, error) {
+	return []*configv1.ClusterOperator{f.co}, nil
+}
+
+func (f *fakeClusterOperatorLister) Get(name string) (*configv1.ClusterOperator, error) {
+	return f.co, nil
 }
 
 type fakeConfigClient struct {
@@ -33,7 +43,7 @@ func (f *fakeConfigClient) ClusterOperators() configv1client.ClusterOperatorInte
 	return f.coInterface
 }
 
-func TestWrapper(t *testing.T) {
+func TestConfigClientWrapperUpdateStatus(t *testing.T) {
 	tests := []struct {
 		name              string
 		existingVersions  []configv1.OperandVersion
@@ -75,6 +85,7 @@ func TestWrapper(t *testing.T) {
 
 			wrapper := NewConfigClientWrapper(
 				&fakeConfigClient{coInterface: &fakeClusterOperatorClient{co: existing}},
+				&fakeClusterOperatorLister{co: existing},
 				tt.releaseVersion,
 				clock.RealClock{},
 			)
