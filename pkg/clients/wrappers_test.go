@@ -17,7 +17,7 @@ type fakeClusterOperatorClient struct {
 	co *configv1.ClusterOperator
 }
 
-func (f *fakeClusterOperatorClient) UpdateStatus(ctx context.Context, co *configv1.ClusterOperator, opts metav1.UpdateOptions) (*configv1.ClusterOperator, error) {
+func (f *fakeClusterOperatorClient) UpdateStatus(_ context.Context, co *configv1.ClusterOperator, _ metav1.UpdateOptions) (*configv1.ClusterOperator, error) {
 	return co, nil
 }
 
@@ -26,11 +26,11 @@ type fakeClusterOperatorLister struct {
 	co *configv1.ClusterOperator
 }
 
-func (f *fakeClusterOperatorLister) List(selector labels.Selector) ([]*configv1.ClusterOperator, error) {
+func (f *fakeClusterOperatorLister) List(_ labels.Selector) ([]*configv1.ClusterOperator, error) {
 	return []*configv1.ClusterOperator{f.co}, nil
 }
 
-func (f *fakeClusterOperatorLister) Get(name string) (*configv1.ClusterOperator, error) {
+func (f *fakeClusterOperatorLister) Get(_ string) (*configv1.ClusterOperator, error) {
 	return f.co, nil
 }
 
