@@ -161,12 +161,19 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		controllerNames,
 	)
 
+	currentFeatureGates, err := cb.CurrentFeatureGates()
+	if err != nil {
+		return fmt.Errorf("unable to retrieve current featureSet: %w", err)
+	}
+
 	incompatibleOperatorController := controller.NewIncompatibleOperatorController(
 		"OLMIncompatibleOperatorController",
 		currentOCPMinorVersion,
 		cl.KubeClient,
 		cl.ClusterExtensionClient,
+		cl.ClusterExtensionRevisionClient,
 		cl.OperatorClient,
+		currentFeatureGates,
 		cc.EventRecorder.ForComponent("OLMIncompatibleOperatorController"),
 	)
 
