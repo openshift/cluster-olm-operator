@@ -87,10 +87,10 @@ func TestConfigClientWrapperUpdateStatus(t *testing.T) {
 			expectProgressing: false,
 		},
 		{
-			name:              "lister error - should return error",
-			existingVersions:  nil,
-			releaseVersion:    "4.22.0",
-			expectError:       true,
+			name:             "lister error - should return error",
+			existingVersions: nil,
+			releaseVersion:   "4.22.0",
+			expectError:      true,
 		},
 		{
 			name:              "not found error - should proceed with update",
