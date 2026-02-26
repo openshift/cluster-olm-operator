@@ -8,6 +8,7 @@ import (
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	configv1listers "github.com/openshift/client-go/config/listers/config/v1"
 	configv1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
@@ -52,7 +53,9 @@ func (w *coWrapper) UpdateStatus(ctx context.Context, co *configv1.ClusterOperat
 		// Get current ClusterOperator from cache to compare versions
 		original, err := w.coLister.Get(co.Name)
 		if err != nil {
-			// Return error to trigger requeue - the controller will retry
+			if apierrors.IsNotFound(err) {
+				return w.ClusterOperatorInterface.UpdateStatus(ctx, co, opts)
+			}
 			return nil, err
 		}
 

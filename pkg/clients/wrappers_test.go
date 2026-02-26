@@ -2,12 +2,15 @@ package clients
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/clock"
 )
 
@@ -23,14 +26,21 @@ func (f *fakeClusterOperatorClient) UpdateStatus(_ context.Context, co *configv1
 
 // fakeClusterOperatorLister implements a simple lister for testing
 type fakeClusterOperatorLister struct {
-	co *configv1.ClusterOperator
+	co  *configv1.ClusterOperator
+	err error
 }
 
 func (f *fakeClusterOperatorLister) List(_ labels.Selector) ([]*configv1.ClusterOperator, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 	return []*configv1.ClusterOperator{f.co}, nil
 }
 
 func (f *fakeClusterOperatorLister) Get(_ string) (*configv1.ClusterOperator, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 	return f.co, nil
 }
 
@@ -49,6 +59,8 @@ func TestConfigClientWrapperUpdateStatus(t *testing.T) {
 		existingVersions  []configv1.OperandVersion
 		releaseVersion    string
 		expectProgressing bool
+		expectError       bool
+		notFoundError     bool
 	}{
 		{
 			name:              "version matches - no injection",
@@ -74,6 +86,19 @@ func TestConfigClientWrapperUpdateStatus(t *testing.T) {
 			releaseVersion:    "",
 			expectProgressing: false,
 		},
+		{
+			name:              "lister error - should return error",
+			existingVersions:  nil,
+			releaseVersion:    "4.22.0",
+			expectError:       true,
+		},
+		{
+			name:              "not found error - should proceed with update",
+			existingVersions:  nil,
+			releaseVersion:    "4.22.0",
+			expectProgressing: false,
+			notFoundError:     true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -83,15 +108,31 @@ func TestConfigClientWrapperUpdateStatus(t *testing.T) {
 				Status:     configv1.ClusterOperatorStatus{Versions: tt.existingVersions},
 			}
 
+			var listerErr error
+			if tt.expectError {
+				listerErr = errors.New("lister error")
+			} else if tt.notFoundError {
+				listerErr = apierrors.NewNotFound(schema.GroupResource{Group: "config.openshift.io", Resource: "clusteroperators"}, "olm")
+			}
+			lister := &fakeClusterOperatorLister{co: existing, err: listerErr}
+
 			wrapper := NewConfigClientWrapper(
 				&fakeConfigClient{coInterface: &fakeClusterOperatorClient{co: existing}},
-				&fakeClusterOperatorLister{co: existing},
+				lister,
 				tt.releaseVersion,
 				clock.RealClock{},
 			)
 
 			input := &configv1.ClusterOperator{ObjectMeta: metav1.ObjectMeta{Name: "olm"}}
 			result, err := wrapper.ClusterOperators().UpdateStatus(context.Background(), input, metav1.UpdateOptions{})
+
+			if tt.expectError {
+				if err == nil {
+					t.Fatalf("expected error but got none")
+				}
+				return
+			}
+
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
