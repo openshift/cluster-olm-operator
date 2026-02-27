@@ -24,6 +24,16 @@ const (
 	WebhookProviderOpenshiftServiceCA = "WebhookProviderOpenshiftServiceCA"
 	WebhookProviderCertManager        = "WebhookProviderCertManager"
 	BoxCutterRuntime                  = "BoxcutterRuntime"
+	// DeploymentConfig: Enables support for Config API support
+	DeploymentConfig = "DeploymentConfig"
+)
+
+// Downstream feature gates not yet available in the vendored openshift/api features package.
+// Remove these once the vendor is updated to include them.
+const (
+	// FeatureGateNewOLMConfigAPI is the downstream feature gate that controls the DeploymentConfig
+	// upstream feature. ref: https://github.com/openshift/enhancements/pull/1915
+	FeatureGateNewOLMConfigAPI configv1.FeatureGateName = "NewOLMConfigAPI"
 )
 
 type MapperInterface interface {
@@ -82,6 +92,9 @@ func NewMapper() *Mapper {
 		},
 		features.FeatureGateNewOLMBoxCutterRuntime: func(v *helmvalues.HelmValues, enabled bool) error {
 			return enableOperatorControllerFeature(v, enabled, BoxCutterRuntime)
+		},
+		FeatureGateNewOLMConfigAPI: func(v *helmvalues.HelmValues, enabled bool) error {
+			return enableOperatorControllerFeature(v, enabled, DeploymentConfig)
 		},
 	}
 
