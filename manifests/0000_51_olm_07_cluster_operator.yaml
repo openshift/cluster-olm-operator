@@ -11,9 +11,43 @@ status:
   - name: operator
     version: "0.0.1-snapshot"
   relatedObjects:
-  - group: ""
-    name: openshift-cluster-olm-operator
-    resource: namespaces
   - group: operator.openshift.io
     name: cluster
     resource: olms
+  - group: ""
+    name: openshift-cluster-olm-operator
+    resource: namespaces
+  - group: rbac.authorization.k8s.io
+    name: cluster-olm-operator
+    resource: clusterroles
+  - group: ""
+    name: cluster-olm-operator
+    namespace: openshift-cluster-olm-operator
+    resource: serviceaccounts
+  - group: ""
+    name: cluster-olm-operator-metrics
+    namespace: openshift-cluster-olm-operator
+    resource: services
+  - group: rbac.authorization.k8s.io
+    name: cluster-olm-operator-role
+    resource: clusterrolebindings
+  - group: apps
+    name: cluster-olm-operator
+    namespace: openshift-cluster-olm-operator
+    resource: deployments
+  - group: networking.k8s.io
+    name: default-deny-all
+    namespace: openshift-cluster-olm-operator
+    resource: networkpolicies
+  - group: networking.k8s.io
+    name: allow-egress-to-openshift-dns
+    namespace: openshift-cluster-olm-operator
+    resource: networkpolicies
+  - group: networking.k8s.io
+    name: allow-egress-to-api-server
+    namespace: openshift-cluster-olm-operator
+    resource: networkpolicies
+  - group: networking.k8s.io
+    name: allow-metrics-traffic
+    namespace: openshift-cluster-olm-operator
+    resource: networkpolicies
