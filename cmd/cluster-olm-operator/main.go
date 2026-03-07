@@ -19,12 +19,14 @@ import (
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	authorizationv1 "k8s.io/api/authorization/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/component-base/cli"
 	utilflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
@@ -250,7 +252,18 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		}(c)
 	}
 
-	time.Sleep(10 * time.Second)
+	// Wait for SCC RBAC to propagate before starting deployment controllers.
+	// The static resource controllers apply ClusterRoleBindings that grant
+	// operand service accounts access to SCCs. We must verify that these
+	// RBAC changes are visible to the API server's authorization layer
+	// before creating deployments whose pods depend on those SCCs.
+	// Only needed when OLMv1 (operator-controller) is deployed.
+	// See: https://issues.redhat.com/browse/OCPBUGS-77899
+	if cb.UseExperimentalFeatureSet() {
+		if err := waitForSCCRBACPropagation(ctx, cl, log); err != nil {
+			return err
+		}
+	}
 
 	for _, c := range deploymentControllerList {
 		go func(c factory.Controller) {
@@ -297,4 +310,57 @@ func parseClusterOperatorManifestObjectReferences(manifestDirPath string, restMa
 	}
 
 	return relatedObjects, nil
+}
+
+// sccAccessCheck defines a service account and SCC pair to verify RBAC propagation for.
+type sccAccessCheck struct {
+	namespace      string
+	serviceAccount string
+	sccName        string
+}
+
+// waitForSCCRBACPropagation polls SubjectAccessReviews to verify that the
+// operand service accounts can use their required SCCs. This avoids a race
+// condition where deployments are created before the RBAC authorizer cache
+// has picked up the ClusterRoleBindings applied by the static resource
+// controllers.
+func waitForSCCRBACPropagation(ctx context.Context, cl *clients.Clients, log klog.Logger) error {
+	checks := []sccAccessCheck{
+		{
+			namespace:      "openshift-operator-controller",
+			serviceAccount: "operator-controller-controller-manager",
+			sccName:        "privileged",
+		},
+	}
+
+	for _, check := range checks {
+		user := fmt.Sprintf("system:serviceaccount:%s:%s", check.namespace, check.serviceAccount)
+		log.Info("Waiting for SCC RBAC propagation", "user", user, "scc", check.sccName)
+
+		err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+			sar := &authorizationv1.SubjectAccessReview{
+				Spec: authorizationv1.SubjectAccessReviewSpec{
+					User:   user,
+					Groups: []string{"system:serviceaccounts", "system:serviceaccounts:" + check.namespace},
+					ResourceAttributes: &authorizationv1.ResourceAttributes{
+						Verb:     "use",
+						Group:    "security.openshift.io",
+						Resource: "securitycontextconstraints",
+						Name:     check.sccName,
+					},
+				},
+			}
+			result, err := cl.KubeClient.AuthorizationV1().SubjectAccessReviews().Create(ctx, sar, metav1.CreateOptions{})
+			if err != nil {
+				log.V(3).Info("SubjectAccessReview failed, retrying", "error", err)
+				return false, nil
+			}
+			return result.Status.Allowed, nil
+		})
+		if err != nil {
+			return fmt.Errorf("failed waiting for SCC RBAC propagation for %s to use %s: %w", user, check.sccName, err)
+		}
+		log.Info("SCC RBAC propagation confirmed", "user", user, "scc", check.sccName)
+	}
+	return nil
 }
