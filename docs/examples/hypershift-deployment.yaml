@@ -1,0 +1,179 @@
+---
+# Example HyperShift deployment for cluster-olm-operator
+# This shows how to configure cluster-olm-operator to manage OLMv1 components
+# for a hosted cluster.
+#
+# In this example:
+# - Management cluster runs in namespace: clusters-customer1
+# - Hosted cluster name: customer1
+# - Admin kubeconfig secret: admin-kubeconfig
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-olm-operator
+  namespace: clusters-customer1
+  labels:
+    app: cluster-olm-operator
+    hypershift.openshift.io/control-plane-component: cluster-olm-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cluster-olm-operator
+  template:
+    metadata:
+      labels:
+        app: cluster-olm-operator
+        hypershift.openshift.io/control-plane-component: cluster-olm-operator
+    spec:
+      serviceAccountName: cluster-olm-operator
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: copy-catalogd-manifests
+          image: quay.io/openshift/origin-olm-catalogd:latest
+          imagePullPolicy: IfNotPresent
+          command:
+          - /bin/sh
+          args:
+          - -c
+          - /cp-manifests /operand-assets
+          volumeMounts:
+            - mountPath: /operand-assets
+              name: operand-assets
+          securityContext:
+            readOnlyRootFilesystem: true
+          terminationMessagePolicy: FallbackToLogsOnError
+        - name: copy-operator-controller-manifests
+          image: quay.io/openshift/origin-olm-operator-controller:latest
+          imagePullPolicy: IfNotPresent
+          command:
+          - /bin/sh
+          args:
+          - -c
+          - /cp-manifests /operand-assets
+          volumeMounts:
+          - mountPath: /operand-assets
+            name: operand-assets
+          securityContext:
+            readOnlyRootFilesystem: true
+          terminationMessagePolicy: FallbackToLogsOnError
+      containers:
+      - name: cluster-olm-operator
+        image: quay.io/openshift/origin-cluster-olm-operator:latest
+        terminationMessagePolicy: FallbackToLogsOnError
+        command:
+        - /cluster-olm-operator
+        args:
+        - start
+        imagePullPolicy: IfNotPresent
+        env:
+        # Standard environment variables
+        - name: OPERATOR_NAME
+          value: cluster-olm-operator
+        - name: OPERATOR_IMAGE_VERSION
+          value: 4.16.0
+        - name: KUBE_RBAC_PROXY_IMAGE
+          value: quay.io/openshift/origin-kube-rbac-proxy:latest
+        - name: CATALOGD_IMAGE
+          value: quay.io/openshift/origin-olm-catalogd:latest
+        - name: OPERATOR_CONTROLLER_IMAGE
+          value: quay.io/openshift/origin-olm-operator-controller:latest
+
+        # HyperShift mode configuration
+        # Setting these enables HyperShift mode
+        - name: HOSTED_KUBECONFIG_SECRET
+          value: admin-kubeconfig
+        - name: HOSTED_NAMESPACE
+          value: clusters-customer1
+
+        resources:
+          requests:
+            cpu: 10m
+            memory: 20Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - mountPath: /operand-assets
+          name: operand-assets
+        - mountPath: /tmp
+          name: tmp
+      volumes:
+      - name: operand-assets
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+
+---
+# ServiceAccount for cluster-olm-operator
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cluster-olm-operator
+  namespace: clusters-customer1
+
+---
+# RBAC for cluster-olm-operator in management cluster
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cluster-olm-operator-management
+rules:
+# Management cluster permissions
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["services", "serviceaccounts", "configmaps"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["config.openshift.io"]
+  resources: ["proxies"]
+  verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cluster-olm-operator-management
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-olm-operator-management
+subjects:
+- kind: ServiceAccount
+  name: cluster-olm-operator
+  namespace: clusters-customer1
+
+---
+# Example: admin-kubeconfig secret
+# This secret contains the kubeconfig for the hosted cluster's API server
+# In a real HyperShift deployment, this is created automatically by HyperShift
+apiVersion: v1
+kind: Secret
+metadata:
+  name: admin-kubeconfig
+  namespace: clusters-customer1
+type: Opaque
+data:
+  # Base64-encoded kubeconfig for the hosted cluster
+  # This would be generated by HyperShift control-plane-operator
+  kubeconfig: |
+    YXBpVmVyc2lvbjogdjEKY2x1c3RlcnM6Ci0gY2x1c3RlcjoKICAgIGNlcnRpZmljYXRl
+    LWF1dGhvcml0eS1kYXRhOiA8YmFzZTY0LWNhLWNlcnQ+CiAgICBzZXJ2ZXI6IGh0dHBz
+    Oi8vYXBpLmN1c3RvbWVyMS5leGFtcGxlLmNvbTo2NDQzCiAgbmFtZTogY3VzdG9tZXIx
+    CmNvbnRleHRzOgotIGNvbnRleHQ6CiAgICBjbHVzdGVyOiBjdXN0b21lcjEKICAgIHVz
+    ZXI6IGFkbWluCiAgbmFtZTogYWRtaW5AY3VzdG9tZXIxCmN1cnJlbnQtY29udGV4dDog
+    YWRtaW5AY3VzdG9tZXIxCmtpbmQ6IENvbmZpZwpwcmVmZXJlbmNlczoge30KdXNlcnM6
+    Ci0gbmFtZTogYWRtaW4KICB1c2VyOgogICAgY2xpZW50LWNlcnRpZmljYXRlLWRhdGE6
+    IDxiYXNlNjQtY2xpZW50LWNlcnQ+CiAgICBjbGllbnQta2V5LWRhdGE6IDxiYXNlNjQt
+    Y2xpZW50LWtleT4K

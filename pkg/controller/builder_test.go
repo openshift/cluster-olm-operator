@@ -138,3 +138,256 @@ func validateEnvVarsOrFail(t *testing.T, in, expected []corev1.EnvVar) {
 		}
 	}
 }
+
+func TestIsHyperShiftMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		expected bool
+	}{
+		{
+			name:     "HyperShift mode enabled",
+			envValue: "admin-kubeconfig",
+			expected: true,
+		},
+		{
+			name:     "HyperShift mode disabled - empty string",
+			envValue: "",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set environment variable
+			if tt.envValue != "" {
+				t.Setenv(HostedKubeconfigSecretEnv, tt.envValue)
+			}
+
+			builder := &Builder{}
+			got := builder.IsHyperShiftMode()
+			if got != tt.expected {
+				t.Errorf("IsHyperShiftMode() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetHostedKubeconfigSecret(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		expected string
+	}{
+		{
+			name:     "returns secret name",
+			envValue: "admin-kubeconfig",
+			expected: "admin-kubeconfig",
+		},
+		{
+			name:     "returns empty when not set",
+			envValue: "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue != "" {
+				t.Setenv(HostedKubeconfigSecretEnv, tt.envValue)
+			}
+
+			builder := &Builder{}
+			got := builder.GetHostedKubeconfigSecret()
+			if got != tt.expected {
+				t.Errorf("GetHostedKubeconfigSecret() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetHostedNamespace(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		expected string
+	}{
+		{
+			name:     "returns namespace",
+			envValue: "clusters-customer1",
+			expected: "clusters-customer1",
+		},
+		{
+			name:     "returns empty when not set",
+			envValue: "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue != "" {
+				t.Setenv(HostedNamespaceEnv, tt.envValue)
+			}
+
+			builder := &Builder{}
+			got := builder.GetHostedNamespace()
+			if got != tt.expected {
+				t.Errorf("GetHostedNamespace() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestInjectHostedClusterKubeconfigHook(t *testing.T) {
+	tests := []struct {
+		name              string
+		kubeconfigSecret  string
+		hostedNamespace   string
+		initialContainers []corev1.Container
+		initialVolumes    []corev1.Volume
+	}{
+		{
+			name:             "injects kubeconfig into single container deployment",
+			kubeconfigSecret: "admin-kubeconfig",
+			hostedNamespace:  "clusters-customer1",
+			initialContainers: []corev1.Container{
+				{
+					Name: "catalogd",
+					Args: []string{"--some-flag"},
+				},
+			},
+			initialVolumes: []corev1.Volume{},
+		},
+		{
+			name:             "injects kubeconfig into multi-container deployment",
+			kubeconfigSecret: "admin-kubeconfig",
+			hostedNamespace:  "clusters-test",
+			initialContainers: []corev1.Container{
+				{
+					Name: "catalogd",
+					Args: []string{"--flag1"},
+				},
+				{
+					Name: "sidecar",
+					Args: []string{"--flag2"},
+				},
+			},
+			initialVolumes: []corev1.Volume{
+				{
+					Name: "existing-volume",
+					VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			deployment := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-deployment",
+					Namespace: "test-namespace",
+				},
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: tt.initialContainers,
+							Volumes:    tt.initialVolumes,
+						},
+					},
+				},
+			}
+
+			// Track initial arg counts before hook runs
+			initialArgCounts := make([]int, len(deployment.Spec.Template.Spec.Containers))
+			for i := range deployment.Spec.Template.Spec.Containers {
+				initialArgCounts[i] = len(deployment.Spec.Template.Spec.Containers[i].Args)
+			}
+
+			hook := InjectHostedClusterKubeconfigHook(tt.kubeconfigSecret, tt.hostedNamespace)
+			err := hook(nil, deployment)
+			if err != nil {
+				t.Fatalf("InjectHostedClusterKubeconfigHook() error = %v", err)
+			}
+
+			// Verify volume was added
+			expectedVolumeCount := len(tt.initialVolumes) + 1
+			if len(deployment.Spec.Template.Spec.Volumes) != expectedVolumeCount {
+				t.Errorf("Expected %d volumes, got %d", expectedVolumeCount, len(deployment.Spec.Template.Spec.Volumes))
+			}
+
+			// Find and verify the kubeconfig volume
+			var foundKubeconfigVolume bool
+			for _, vol := range deployment.Spec.Template.Spec.Volumes {
+				if vol.Name == "hosted-kubeconfig" {
+					foundKubeconfigVolume = true
+					if vol.Secret == nil {
+						t.Error("Expected secret volume source, got nil")
+					} else if vol.Secret.SecretName != tt.kubeconfigSecret {
+						t.Errorf("Expected secret name %s, got %s", tt.kubeconfigSecret, vol.Secret.SecretName)
+					}
+					break
+				}
+			}
+			if !foundKubeconfigVolume {
+				t.Error("hosted-kubeconfig volume not found")
+			}
+
+			// Verify each container was configured
+			for i, container := range deployment.Spec.Template.Spec.Containers {
+				// Check volume mount
+				var foundVolumeMount bool
+				for _, vm := range container.VolumeMounts {
+					if vm.Name == "hosted-kubeconfig" {
+						foundVolumeMount = true
+						if vm.MountPath != kubeconfigMountPath {
+							t.Errorf("Container %s: expected mount path %s, got %s", container.Name, kubeconfigMountPath, vm.MountPath)
+						}
+						if !vm.ReadOnly {
+							t.Errorf("Container %s: expected ReadOnly=true for kubeconfig mount", container.Name)
+						}
+						break
+					}
+				}
+				if !foundVolumeMount {
+					t.Errorf("Container %s: hosted-kubeconfig volume mount not found", container.Name)
+				}
+
+				// Check args - should have original args plus 2 new ones
+				expectedArgCount := initialArgCounts[i] + 2
+				if len(container.Args) != expectedArgCount {
+					t.Errorf("Container %s: expected %d args, got %d (initial: %d)", container.Name, expectedArgCount, len(container.Args), initialArgCounts[i])
+				}
+
+				// Verify kubeconfig flag
+				kubeconfigFlag := "--kubeconfig=" + kubeconfigFilePath
+				var foundKubeconfigFlag bool
+				for _, arg := range container.Args {
+					if arg == kubeconfigFlag {
+						foundKubeconfigFlag = true
+						break
+					}
+				}
+				if !foundKubeconfigFlag {
+					t.Errorf("Container %s: expected arg %s not found in %v", container.Name, kubeconfigFlag, container.Args)
+				}
+
+				// Verify system-namespace flag
+				namespaceFlag := "--system-namespace=" + tt.hostedNamespace
+				var foundNamespaceFlag bool
+				for _, arg := range container.Args {
+					if arg == namespaceFlag {
+						foundNamespaceFlag = true
+						break
+					}
+				}
+				if !foundNamespaceFlag {
+					t.Errorf("Container %s: expected arg %s not found in %v", container.Name, namespaceFlag, container.Args)
+				}
+			}
+		})
+	}
+}

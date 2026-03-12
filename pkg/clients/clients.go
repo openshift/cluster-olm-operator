@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/clock"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -72,31 +74,50 @@ type Clients struct {
 }
 
 func New(cc *controllercmd.ControllerContext) (*Clients, error) {
+	// Dual-API support for HyperShift: detect HYPERSHIFT_MODE and load hosted cluster config
+	mgmtConfig := cc.KubeConfig
+	hostedConfig := mgmtConfig
+
+	if hypershiftMode := os.Getenv("HYPERSHIFT_MODE"); hypershiftMode == "true" {
+		if hostedKubeconfigPath := os.Getenv("HOSTED_KUBECONFIG"); hostedKubeconfigPath != "" {
+			var err error
+			hostedConfig, err = clientcmd.BuildConfigFromFlags("", hostedKubeconfigPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load hosted kubeconfig from %s: %w", hostedKubeconfigPath, err)
+			}
+		} else {
+			return nil, fmt.Errorf("HYPERSHIFT_MODE is true but HOSTED_KUBECONFIG is not set")
+		}
+	}
+
 	kubeClient, err := kubernetes.NewForConfig(cc.ProtoKubeConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	apiExtensionsClient, err := apiextensionsclient.NewForConfig(cc.KubeConfig)
+	apiExtensionsClient, err := apiextensionsclient.NewForConfig(mgmtConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	dynClient, err := dynamic.NewForConfig(cc.KubeConfig)
+	// DynamicClient uses hostedConfig for ClusterCatalog/ClusterExtension operations
+	dynClient, err := dynamic.NewForConfig(hostedConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	httpClient, err := rest.HTTPClientFor(cc.KubeConfig)
+	// RESTMapper uses hostedConfig for resource discovery
+	httpClient, err := rest.HTTPClientFor(hostedConfig)
 	if err != nil {
 		return nil, err
 	}
-	rm, err := apiutil.NewDynamicRESTMapper(cc.KubeConfig, httpClient)
+	rm, err := apiutil.NewDynamicRESTMapper(hostedConfig, httpClient)
 	if err != nil {
 		return nil, err
 	}
 
-	operatorClientset, err := operatorclient.NewForConfig(cc.KubeConfig)
+	// OperatorClientset uses mgmtConfig for ClusterOperator status reporting
+	operatorClientset, err := operatorclient.NewForConfig(mgmtConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +130,8 @@ func New(cc *controllercmd.ControllerContext) (*Clients, error) {
 		clock:     clock.RealClock{},
 	}
 
-	configClient, err := configclient.NewForConfig(cc.KubeConfig)
+	// ConfigClient uses mgmtConfig for cluster configuration
+	configClient, err := configclient.NewForConfig(mgmtConfig)
 	if err != nil {
 		return nil, err
 	}

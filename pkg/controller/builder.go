@@ -39,12 +39,40 @@ import (
 	catalogdv1 "github.com/operator-framework/catalogd/api/v1"
 )
 
+const (
+	// HyperShift environment variables
+	HostedKubeconfigSecretEnv = "HOSTED_KUBECONFIG_SECRET"
+	HostedNamespaceEnv        = "HOSTED_NAMESPACE"
+
+	// Kubeconfig mount paths
+	kubeconfigMountPath = "/var/run/secrets/kubeconfig"
+	kubeconfigFilePath  = "/var/run/secrets/kubeconfig/kubeconfig"
+)
+
 type Builder struct {
 	Assets            string
 	Clients           *clients.Clients
 	ControllerContext *controllercmd.ControllerContext
 	KnownRESTMappings map[schema.GroupVersionKind]*meta.RESTMapping
 	FeatureGate       configv1.FeatureGate
+}
+
+// IsHyperShiftMode returns true if the operator is running in HyperShift mode.
+// HyperShift mode is detected by the presence of the HOSTED_KUBECONFIG_SECRET environment variable.
+func (b *Builder) IsHyperShiftMode() bool {
+	return os.Getenv(HostedKubeconfigSecretEnv) != ""
+}
+
+// GetHostedKubeconfigSecret returns the name of the secret containing the hosted cluster's kubeconfig.
+// Returns empty string if not in HyperShift mode.
+func (b *Builder) GetHostedKubeconfigSecret() string {
+	return os.Getenv(HostedKubeconfigSecretEnv)
+}
+
+// GetHostedNamespace returns the hosted control plane namespace.
+// Returns empty string if not in HyperShift mode.
+func (b *Builder) GetHostedNamespace() string {
+	return os.Getenv(HostedNamespaceEnv)
 }
 
 func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory.Controller, map[string]factory.Controller, map[string]factory.Controller, []configv1.ObjectReference, error) {
@@ -117,6 +145,25 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 
 			if manifestGVK.Kind == "Deployment" && manifestGVK.Group == "apps" {
 				controllerName := controllerNameForObject(namePrefix, &manifest)
+
+				// Build deployment hooks based on configuration
+				deploymentHooks := []deploymentcontroller.DeploymentHookFunc{
+					UpdateDeploymentProxyHook(b.Clients.ProxyClient),
+				}
+
+				// Add HyperShift kubeconfig injection if in HyperShift mode
+				if b.IsHyperShiftMode() {
+					kubeconfigSecret := b.GetHostedKubeconfigSecret()
+					hostedNamespace := b.GetHostedNamespace()
+					log.Info("HyperShift mode detected, injecting kubeconfig configuration",
+						"deployment", manifest.GetName(),
+						"kubeconfigSecret", kubeconfigSecret,
+						"hostedNamespace", hostedNamespace)
+					deploymentHooks = append(deploymentHooks,
+						InjectHostedClusterKubeconfigHook(kubeconfigSecret, hostedNamespace),
+					)
+				}
+
 				deploymentControllers[controllerName] = deploymentcontroller.NewDeploymentController(
 					controllerName,
 					manifestData,
@@ -130,7 +177,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 					[]deploymentcontroller.ManifestHookFunc{
 						replaceVerbosityHook("${LOG_VERBOSITY}"),
 					},
-					UpdateDeploymentProxyHook(b.Clients.ProxyClient),
+					deploymentHooks...,
 				)
 				return nil
 			}
@@ -312,6 +359,65 @@ func UpdateDeploymentProxyHook(pc clients.ProxyClientInterface) deploymentcontro
 		}
 		if len(errs) > 0 {
 			return errors.Join(errs...)
+		}
+
+		return nil
+	}
+}
+
+// InjectHostedClusterKubeconfigHook adds the necessary volume, volume mount, and command-line
+// arguments to enable an OLMv1 component (catalogd or operator-controller) to watch the
+// hosted cluster's API server instead of the management cluster.
+//
+// This hook is used when cluster-olm-operator runs in HyperShift mode (Approach 1: Control Plane Placement).
+// It enables catalogd and operator-controller to connect to the hosted cluster's API server by:
+// 1. Mounting the admin-kubeconfig secret as a volume
+// 2. Adding volume mounts to all containers
+// 3. Adding --kubeconfig and --system-namespace flags to all containers
+func InjectHostedClusterKubeconfigHook(kubeconfigSecret, hostedNamespace string) deploymentcontroller.DeploymentHookFunc {
+	return func(_ *operatorv1.OperatorSpec, deployment *appsv1.Deployment) error {
+		log := klog.FromContext(context.Background()).WithName("builder").WithValues("deployment", deployment.Name)
+		log.V(1).Info("Injecting hosted cluster kubeconfig configuration",
+			"kubeconfigSecret", kubeconfigSecret,
+			"hostedNamespace", hostedNamespace)
+
+		// Add kubeconfig volume from the specified secret
+		kubeconfigVolume := corev1.Volume{
+			Name: "hosted-kubeconfig",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: kubeconfigSecret,
+				},
+			},
+		}
+		deployment.Spec.Template.Spec.Volumes = append(
+			deployment.Spec.Template.Spec.Volumes,
+			kubeconfigVolume,
+		)
+
+		// Add volume mount and command-line flags to all containers
+		for i := range deployment.Spec.Template.Spec.Containers {
+			container := &deployment.Spec.Template.Spec.Containers[i]
+
+			// Mount kubeconfig
+			container.VolumeMounts = append(container.VolumeMounts,
+				corev1.VolumeMount{
+					Name:      "hosted-kubeconfig",
+					MountPath: kubeconfigMountPath,
+					ReadOnly:  true,
+				},
+			)
+
+			// Add command-line flags for kubeconfig and system namespace
+			container.Args = append(container.Args,
+				"--kubeconfig="+kubeconfigFilePath,
+				"--system-namespace="+hostedNamespace,
+			)
+
+			log.V(2).Info("Configured container",
+				"container", container.Name,
+				"kubeconfigPath", kubeconfigFilePath,
+				"systemNamespace", hostedNamespace)
 		}
 
 		return nil
