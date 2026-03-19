@@ -1,0 +1,30 @@
+language: en-US
+inheritance: true
+reviews:
+  high_level_summary: false
+  high_level_summary_in_walkthrough: false
+  poem: true
+  enable_prompt_for_ai_agents: true
+  path_filters:
+    - '!vendor/**'
+    - '!**/vendor/**'
+  path_instructions:
+    - path: '**'
+      instructions: >-
+        -Focus on major issues impacting performance, readability,
+        maintainability and security. Avoid nitpicks and avoid verbosity.
+  abort_on_close: true
+  disable_cache: false
+  auto_review:
+    enabled: true
+    ignore_title_keywords:
+      - WIP
+      - do-not-merge
+      - work-in-progress
+    labels:
+      - '!do-not-merge/work-in-progress'
+    drafts: false
+knowledge_base:
+  opt_out: true
+  web_search:
+    enabled: false
