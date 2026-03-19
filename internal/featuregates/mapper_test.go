@@ -35,6 +35,7 @@ func TestMapper_DownstreamFeatureGates(t *testing.T) {
 		features.FeatureGateNewOLMWebhookProviderOpenshiftServiceCA,
 		features.FeatureGateNewOLMCatalogdAPIV1Metas,
 		features.FeatureGateNewOLMBoxCutterRuntime,
+		FeatureGateNewOLMConfigAPI,
 	}
 
 	if len(gates) != len(expectedGates) {
@@ -73,6 +74,12 @@ func TestMapper_UpstreamForDownstream(t *testing.T) {
 			name:           "valid downstream gate - boxcutter runtime",
 			downstreamGate: features.FeatureGateNewOLMBoxCutterRuntime,
 			enabled:        false,
+			expectFunc:     true,
+		},
+		{
+			name:           "valid downstream gate - config API",
+			downstreamGate: FeatureGateNewOLMConfigAPI,
+			enabled:        true,
 			expectFunc:     true,
 		},
 		{
@@ -228,6 +235,34 @@ func TestMapper_FeatureGateMappings(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:           "ConfigAPI enabled",
+			downstreamGate: FeatureGateNewOLMConfigAPI,
+			enabled:        true,
+			expectedValues: map[string]interface{}{
+				"options": map[string]interface{}{
+					"operatorController": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled": []interface{}{DeploymentConfig},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:           "ConfigAPI disabled",
+			downstreamGate: FeatureGateNewOLMConfigAPI,
+			enabled:        false,
+			expectedValues: map[string]interface{}{
+				"options": map[string]interface{}{
+					"operatorController": map[string]interface{}{
+						"features": map[string]interface{}{
+							"disabled": []interface{}{DeploymentConfig},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	mapper := NewMapper()
@@ -276,6 +311,7 @@ func TestMapper_FeatureGateValidation(t *testing.T) {
 			SingleOwnNamespaceInstallSupport,
 			WebhookProviderOpenshiftServiceCA,
 			WebhookProviderCertManager,
+			DeploymentConfig,
 		}
 
 		for i, constant := range constants {
