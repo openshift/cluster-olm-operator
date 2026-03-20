@@ -35,7 +35,7 @@ func TestMapper_DownstreamFeatureGates(t *testing.T) {
 		features.FeatureGateNewOLMWebhookProviderOpenshiftServiceCA,
 		features.FeatureGateNewOLMCatalogdAPIV1Metas,
 		features.FeatureGateNewOLMBoxCutterRuntime,
-		FeatureGateNewOLMConfigAPI,
+		features.FeatureGateNewOLMConfigAPI,
 	}
 
 	if len(gates) != len(expectedGates) {
@@ -78,7 +78,7 @@ func TestMapper_UpstreamForDownstream(t *testing.T) {
 		},
 		{
 			name:           "valid downstream gate - config API",
-			downstreamGate: FeatureGateNewOLMConfigAPI,
+			downstreamGate: features.FeatureGateNewOLMConfigAPI,
 			enabled:        true,
 			expectFunc:     true,
 		},
@@ -237,7 +237,7 @@ func TestMapper_FeatureGateMappings(t *testing.T) {
 		},
 		{
 			name:           "ConfigAPI enabled",
-			downstreamGate: FeatureGateNewOLMConfigAPI,
+			downstreamGate: features.FeatureGateNewOLMConfigAPI,
 			enabled:        true,
 			expectedValues: map[string]interface{}{
 				"options": map[string]interface{}{
@@ -251,7 +251,7 @@ func TestMapper_FeatureGateMappings(t *testing.T) {
 		},
 		{
 			name:           "ConfigAPI disabled",
-			downstreamGate: FeatureGateNewOLMConfigAPI,
+			downstreamGate: features.FeatureGateNewOLMConfigAPI,
 			enabled:        false,
 			expectedValues: map[string]interface{}{
 				"options": map[string]interface{}{
