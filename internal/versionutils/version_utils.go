@@ -20,7 +20,7 @@ func GetCurrentOCPMinorVersion(versionString string) (*semver.Version, error) {
 }
 
 const (
-	majorMinorPattern = `([1-9][0-9]*)\.([1-9][0-9]*)`
+	majorMinorPattern = `([1-9][0-9]*)\.(0|[1-9][0-9]*)`
 )
 
 var (
@@ -28,7 +28,7 @@ var (
 )
 
 func ToAllowedSemver(data []byte) (*semver.Version, error) {
-	var raw interface{}
+	var raw any
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, err
 	}
@@ -61,12 +61,24 @@ func ToAllowedSemver(data []byte) (*semver.Version, error) {
 	return &version, nil
 }
 
+// ocpVersion500 is the semver representation of OCP 5.0, which is co-released with 4.23 as an
+// equivalent release. Neither upgrades to the other; both upgrade exclusively to 5.1.
+var ocpVersion500 = semver.Version{Major: 5, Minor: 0, Patch: 0}
+
 // IsOperatorMaxOCPVersionCompatibleWithCluster compares the operator's maximum openshift version with the current cluster version
 // and returns whether the operator is compatible with the next cluster version. For example,
 //
 //	if maxOCPVersion is 4.18 and currentOCPMinorVersion is 4.17 => compatible
 //	if maxOCPVersion is 4.18 and currentOCPMinorVersion is 4.18 => incompatible
 //	if maxOCPVersion is 4.18 and currentOCPMinorVersion is 4.19 => incompatible
+//	if maxOCPVersion is 5.0  and currentOCPMinorVersion is 4.23 => incompatible (next upgrade target is 5.1)
+//	if maxOCPVersion is 5.1  and currentOCPMinorVersion is 4.23 => compatible
 func IsOperatorMaxOCPVersionCompatibleWithCluster(operatorMaxOCPVersion, currentOCPMinorVersion semver.Version) bool {
-	return operatorMaxOCPVersion.GT(currentOCPMinorVersion)
+	effective := currentOCPMinorVersion
+	// OCP 4.23 and 5.0 are co-released equivalents; the only upgrade target from either is 5.1.
+	// Treat 4.23 as 5.0 so that operators must declare maxOCP > 5.0 (i.e. >= 5.1) to be compatible.
+	if currentOCPMinorVersion.Major == 4 && currentOCPMinorVersion.Minor == 23 {
+		effective = ocpVersion500
+	}
+	return operatorMaxOCPVersion.GT(effective)
 }

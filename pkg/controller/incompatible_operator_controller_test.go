@@ -317,6 +317,112 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 				messageContaining: "could not convert olm.properties",
 			},
 		},
+		// 4.23/5.0/5.1 upgrade edge cases.
+		// 4.23 and 5.0 are co-released equivalents; the only upgrade target from either is 5.1.
+		{
+			name: "boxcutter: maxOCPVersion=5.0 with cluster at 4.23 is incompatible (next upgrade target is 5.1)",
+			args: args{
+				clusterExtensions: []runtime.Object{
+					createClusterExtension("test-operator"),
+				},
+				clusterExtensionRevisions: []runtime.Object{
+					createRevision("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"5.0"}]`)),
+				},
+				currentOCPVersion: "4.23.0",
+				boxCutterEnabled:  true,
+			},
+			wants: wants{
+				conditionStatus:   operatorv1.ConditionFalse,
+				conditionReason:   reasonIncompatibleOperatorsInstalled,
+				messageContaining: "test-bundle-1.0",
+			},
+		},
+		{
+			name: "boxcutter: maxOCPVersion=5.1 with cluster at 4.23 is compatible",
+			args: args{
+				clusterExtensions: []runtime.Object{
+					createClusterExtension("test-operator"),
+				},
+				clusterExtensionRevisions: []runtime.Object{
+					createRevision("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"5.1"}]`)),
+				},
+				currentOCPVersion: "4.23.0",
+				boxCutterEnabled:  true,
+			},
+			wants: wants{
+				conditionStatus: operatorv1.ConditionTrue,
+				conditionReason: "",
+			},
+		},
+		{
+			name: "boxcutter: maxOCPVersion=5.1 with cluster at 5.0 is compatible",
+			args: args{
+				clusterExtensions: []runtime.Object{
+					createClusterExtension("test-operator"),
+				},
+				clusterExtensionRevisions: []runtime.Object{
+					createRevision("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"5.1"}]`)),
+				},
+				currentOCPVersion: "5.0.0",
+				boxCutterEnabled:  true,
+			},
+			wants: wants{
+				conditionStatus: operatorv1.ConditionTrue,
+				conditionReason: "",
+			},
+		},
+		{
+			name: "helm: maxOCPVersion=5.0 with cluster at 4.23 is incompatible (next upgrade target is 5.1)",
+			args: args{
+				clusterExtensions: []runtime.Object{
+					createClusterExtension("test-operator"),
+				},
+				helmReleases: []runtime.Object{
+					createHelmReleaseSecret("test-operator", "test-bundle-1.0", "test-package", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"5.0"}]`)),
+				},
+				currentOCPVersion: "4.23.0",
+				boxCutterEnabled:  false,
+			},
+			wants: wants{
+				conditionStatus:   operatorv1.ConditionFalse,
+				conditionReason:   reasonIncompatibleOperatorsInstalled,
+				messageContaining: "test-bundle-1.0",
+			},
+		},
+		{
+			name: "helm: maxOCPVersion=5.1 with cluster at 4.23 is compatible",
+			args: args{
+				clusterExtensions: []runtime.Object{
+					createClusterExtension("test-operator"),
+				},
+				helmReleases: []runtime.Object{
+					createHelmReleaseSecret("test-operator", "test-bundle-1.0", "test-package", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"5.1"}]`)),
+				},
+				currentOCPVersion: "4.23.0",
+				boxCutterEnabled:  false,
+			},
+			wants: wants{
+				conditionStatus: operatorv1.ConditionTrue,
+				conditionReason: "",
+			},
+		},
+		{
+			name: "helm: maxOCPVersion=5.1 with cluster at 5.0 is compatible",
+			args: args{
+				clusterExtensions: []runtime.Object{
+					createClusterExtension("test-operator"),
+				},
+				helmReleases: []runtime.Object{
+					createHelmReleaseSecret("test-operator", "test-bundle-1.0", "test-package", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"5.1"}]`)),
+				},
+				currentOCPVersion: "5.0.0",
+				boxCutterEnabled:  false,
+			},
+			wants: wants{
+				conditionStatus: operatorv1.ConditionTrue,
+				conditionReason: "",
+			},
+		},
 	}
 
 	for _, tt := range tests {

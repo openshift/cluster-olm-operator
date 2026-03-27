@@ -57,6 +57,29 @@ func TestToAllowedSemver(t *testing.T) {
 			jsonInput: `"v4.18.0"`,
 			wantErr:   true,
 		},
+		{
+			name:      "valid float version 5.0",
+			jsonInput: `5.0`,
+			want:      &semver.Version{Major: 5, Minor: 0, Patch: 0},
+			wantErr:   false,
+		},
+		{
+			name:      "valid string version 5.0",
+			jsonInput: `"5.0"`,
+			want:      &semver.Version{Major: 5, Minor: 0, Patch: 0},
+			wantErr:   false,
+		},
+		{
+			name:      "valid string version 5.1",
+			jsonInput: `"5.1"`,
+			want:      &semver.Version{Major: 5, Minor: 1, Patch: 0},
+			wantErr:   false,
+		},
+		{
+			name:      "invalid float version with leading-zero minor 5.00",
+			jsonInput: `5.00`,
+			wantErr:   true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -95,6 +118,68 @@ func TestIsOperatorMaxOCPVersionCompatibleWithCluster(t *testing.T) {
 			name:                   "maxOCPVersion is 4.18, currentOCPMinorVersion is 4.19 => incompatible",
 			operatorMaxOCPVersion:  semver.Version{Major: 4, Minor: 18, Patch: 0},
 			currentOCPMinorVersion: semver.Version{Major: 4, Minor: 19, Patch: 0},
+			want:                   false,
+		},
+		{
+			name:                   "maxOCPVersion is 4.23, currentOCPMinorVersion is 4.22 => compatible",
+			operatorMaxOCPVersion:  semver.Version{Major: 4, Minor: 23, Patch: 0},
+			currentOCPMinorVersion: semver.Version{Major: 4, Minor: 22, Patch: 0},
+			want:                   true,
+		},
+		// 4.23/5.0/5.1 upgrade edge matrix.
+		// 4.23 and 5.0 are co-released equivalents; the only upgrade target from either is 5.1.
+		{
+			name:                   "maxOCPVersion is 4.23, currentOCPMinorVersion is 4.23 => incompatible",
+			operatorMaxOCPVersion:  semver.Version{Major: 4, Minor: 23, Patch: 0},
+			currentOCPMinorVersion: semver.Version{Major: 4, Minor: 23, Patch: 0},
+			want:                   false,
+		},
+		{
+			name:                   "maxOCPVersion is 5.0, currentOCPMinorVersion is 4.23 => incompatible (next upgrade target is 5.1)",
+			operatorMaxOCPVersion:  semver.Version{Major: 5, Minor: 0, Patch: 0},
+			currentOCPMinorVersion: semver.Version{Major: 4, Minor: 23, Patch: 0},
+			want:                   false,
+		},
+		{
+			name:                   "maxOCPVersion is 5.1, currentOCPMinorVersion is 4.23 => compatible",
+			operatorMaxOCPVersion:  semver.Version{Major: 5, Minor: 1, Patch: 0},
+			currentOCPMinorVersion: semver.Version{Major: 4, Minor: 23, Patch: 0},
+			want:                   true,
+		},
+		{
+			name:                   "maxOCPVersion is 4.23, currentOCPMinorVersion is 5.0 => incompatible",
+			operatorMaxOCPVersion:  semver.Version{Major: 4, Minor: 23, Patch: 0},
+			currentOCPMinorVersion: semver.Version{Major: 5, Minor: 0, Patch: 0},
+			want:                   false,
+		},
+		{
+			name:                   "maxOCPVersion is 5.0, currentOCPMinorVersion is 5.0 => incompatible",
+			operatorMaxOCPVersion:  semver.Version{Major: 5, Minor: 0, Patch: 0},
+			currentOCPMinorVersion: semver.Version{Major: 5, Minor: 0, Patch: 0},
+			want:                   false,
+		},
+		{
+			name:                   "maxOCPVersion is 5.1, currentOCPMinorVersion is 5.0 => compatible",
+			operatorMaxOCPVersion:  semver.Version{Major: 5, Minor: 1, Patch: 0},
+			currentOCPMinorVersion: semver.Version{Major: 5, Minor: 0, Patch: 0},
+			want:                   true,
+		},
+		{
+			name:                   "maxOCPVersion is 4.23, currentOCPMinorVersion is 5.1 => incompatible",
+			operatorMaxOCPVersion:  semver.Version{Major: 4, Minor: 23, Patch: 0},
+			currentOCPMinorVersion: semver.Version{Major: 5, Minor: 1, Patch: 0},
+			want:                   false,
+		},
+		{
+			name:                   "maxOCPVersion is 5.0, currentOCPMinorVersion is 5.1 => incompatible",
+			operatorMaxOCPVersion:  semver.Version{Major: 5, Minor: 0, Patch: 0},
+			currentOCPMinorVersion: semver.Version{Major: 5, Minor: 1, Patch: 0},
+			want:                   false,
+		},
+		{
+			name:                   "maxOCPVersion is 5.1, currentOCPMinorVersion is 5.1 => incompatible",
+			operatorMaxOCPVersion:  semver.Version{Major: 5, Minor: 1, Patch: 0},
+			currentOCPMinorVersion: semver.Version{Major: 5, Minor: 1, Patch: 0},
 			want:                   false,
 		},
 	}
