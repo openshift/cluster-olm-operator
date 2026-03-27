@@ -301,7 +301,7 @@ func (c *incompatibleOperatorController) checkIncompatibility(logger logr.Logger
 			if err != nil {
 				err = fmt.Errorf("error converting to semver for version %s: %v", string(p.Value), err)
 				logger.Info(err.Error())
-				errs = append(errs, fmt.Errorf("more than one %s found in bundle", maxOpenShiftVersionProperty))
+				errs = append(errs, err)
 				continue
 			}
 
