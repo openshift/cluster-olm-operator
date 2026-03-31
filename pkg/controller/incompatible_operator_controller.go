@@ -48,14 +48,14 @@ const (
 )
 
 type incompatibleOperatorController struct {
-	name                           string
-	currentOCPMinorVersion         *semver.Version
-	kubeclient                     kubernetes.Interface
-	clusterExtensionClient         *clients.ClusterExtensionClient
-	clusterExtensionRevisionClient *clients.ClusterExtensionRevisionClient
-	operatorClient                 v1helpers.OperatorClient
-	featureGate                    featuregates.FeatureGate
-	logger                         logr.Logger
+	name                   string
+	currentOCPMinorVersion *semver.Version
+	kubeclient             kubernetes.Interface
+	clusterExtensionClient *clients.ClusterExtensionClient
+	clusterObjectSetClient *clients.ClusterObjectSetClient
+	operatorClient         v1helpers.OperatorClient
+	featureGate            featuregates.FeatureGate
+	logger                 logr.Logger
 }
 
 func NewIncompatibleOperatorController(
@@ -63,20 +63,20 @@ func NewIncompatibleOperatorController(
 	currentOCPMinorVersion *semver.Version,
 	kubeclient kubernetes.Interface,
 	clusterExtensionClient *clients.ClusterExtensionClient,
-	clusterExtensionRevisionClient *clients.ClusterExtensionRevisionClient,
+	clusterObjectSetClient *clients.ClusterObjectSetClient,
 	operatorClient v1helpers.OperatorClient,
 	featureGate featuregates.FeatureGate,
 	eventRecorder events.Recorder,
 ) factory.Controller {
 	c := &incompatibleOperatorController{
-		name:                           name,
-		currentOCPMinorVersion:         currentOCPMinorVersion,
-		kubeclient:                     kubeclient,
-		clusterExtensionClient:         clusterExtensionClient,
-		clusterExtensionRevisionClient: clusterExtensionRevisionClient,
-		operatorClient:                 operatorClient,
-		featureGate:                    featureGate,
-		logger:                         klog.NewKlogr().WithName(name),
+		name:                   name,
+		currentOCPMinorVersion: currentOCPMinorVersion,
+		kubeclient:             kubeclient,
+		clusterExtensionClient: clusterExtensionClient,
+		clusterObjectSetClient: clusterObjectSetClient,
+		operatorClient:         operatorClient,
+		featureGate:            featureGate,
+		logger:                 klog.NewKlogr().WithName(name),
 	}
 
 	return factory.New().WithSync(c.sync).WithSyncDegradedOnError(operatorClient).WithInformers(operatorClient.Informer(), clusterExtensionClient.Informer().Informer()).ToController(name, eventRecorder)
@@ -128,7 +128,7 @@ func (c *incompatibleOperatorController) sync(ctx context.Context, _ factory.Syn
 
 func (c *incompatibleOperatorController) getIncompatibleOperators() ([]string, error) {
 	if c.isBoxCutterRuntimeEnabled() {
-		return c.getIncompatibleOperatorsFromExtensionRevision()
+		return c.getIncompatibleOperatorsFromObjectSet()
 	}
 	return c.getIncompatibleOperatorsFromHelmRelease()
 }
@@ -195,7 +195,7 @@ func (c *incompatibleOperatorController) getIncompatibleOperatorsFromHelmRelease
 	return incompatibleOperators, errors.Join(errs...)
 }
 
-func (c *incompatibleOperatorController) getIncompatibleOperatorsFromExtensionRevision() ([]string, error) {
+func (c *incompatibleOperatorController) getIncompatibleOperatorsFromObjectSet() ([]string, error) {
 	var incompatibleOperators []string
 
 	ceList, err := c.clusterExtensionClient.Informer().Lister().List(labels.NewSelector())
@@ -215,39 +215,39 @@ func (c *incompatibleOperatorController) getIncompatibleOperatorsFromExtensionRe
 		name := metaObj.GetName()
 		logger := c.logger.WithValues("clusterextension", name)
 
-		// Get extension revisions
+		// Get ClusterObjectSets owned by the extension
 		selector, err := labels.Parse(fmt.Sprintf("%s=%s,%s=%s", ownerKindKey, ocv1.ClusterExtensionKind, ownerNameKey, name))
 		if err != nil {
-			errs = append(errs, fmt.Errorf("error parsing label selector for cluster extension revision %s: %v", name, err))
+			errs = append(errs, fmt.Errorf("error parsing label selector for cluster object set %s: %v", name, err))
 			continue
 		}
-		cerList, err := c.clusterExtensionRevisionClient.Informer().Lister().List(selector)
+		cosList, err := c.clusterObjectSetClient.Informer().Lister().List(selector)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("error listing cluster extension revision %s: %v", name, err))
+			errs = append(errs, fmt.Errorf("error listing cluster object set %s: %v", name, err))
 			continue
 		}
 
-		// Get most recent active revision
-		cer, err := getLatestRevision(cerList)
+		// Get most recent active object set
+		cos, err := getLatestObjectSet(cosList)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		if cer == nil {
-			logger.Info("No active revisions found for cluster extension")
+		if cos == nil {
+			logger.Info("No active object sets found for cluster extension")
 			continue
 		}
 
-		cerAnns := cer.GetAnnotations()
+		cosAnns := cos.GetAnnotations()
 
-		if _, ok := cerAnns[olmPropertiesKey]; !ok {
+		if _, ok := cosAnns[olmPropertiesKey]; !ok {
 			logger.V(1).Info("Bundle has no olm properties")
 			continue
 		}
 
-		bundleName := cerAnns[bundleNameKey]
+		bundleName := cosAnns[bundleNameKey]
 		logger = logger.WithValues("bundleName", bundleName)
-		props, err := propertyListFromPropertiesAnnotation(cerAnns[olmPropertiesKey])
+		props, err := propertyListFromPropertiesAnnotation(cosAnns[olmPropertiesKey])
 		if err != nil {
 			err = fmt.Errorf("could not convert olm.properties: %v", err)
 			errs = append(errs, fmt.Errorf("error with cluster extension %s: error in bundle %s: %v", name, bundleName, err))
@@ -314,16 +314,16 @@ func (c *incompatibleOperatorController) checkIncompatibility(logger logr.Logger
 	return isIncompatible, errs
 }
 
-func getLatestRevision(cerList []runtime.Object) (metav1.Object, error) {
-	var cer metav1.Object
+func getLatestObjectSet(objList []runtime.Object) (metav1.Object, error) {
+	var selected metav1.Object
 	var maxRev int64
-	for _, runtimeObj := range cerList {
+	for _, runtimeObj := range objList {
 		obj, ok := runtimeObj.(*unstructured.Unstructured)
 		if !ok {
 			return nil, fmt.Errorf("metav1.Object type assertion failed for object %v", runtimeObj)
 		}
 
-		// avoiding using ClusterExtensionRevision directly in case there are breaking changes in the serialization
+		// avoiding using ClusterObjectSet directly in case there are breaking changes in the serialization
 		// of fields that we don't care about here as we iterate while in technical preview.
 		// This helps avoid deadlocks where changes coming from the upstream break the OTE tests because
 		// cluster-olm-operator is suffering from deserialization errors. These issues are not completely avoidable,
@@ -336,20 +336,20 @@ func getLatestRevision(cerList []runtime.Object) (metav1.Object, error) {
 		}{}
 
 		if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, shortRev); err != nil {
-			return nil, fmt.Errorf("error converting revision object: %w", err)
+			return nil, fmt.Errorf("error converting object set: %w", err)
 		}
 
 		if shortRev.Spec.LifecycleState != revisionStateActive {
 			continue
 		}
 
-		// Take latest active revision
-		if cer == nil || shortRev.Spec.Revision > maxRev {
+		// Take latest active object set (highest spec.revision)
+		if selected == nil || shortRev.Spec.Revision > maxRev {
 			maxRev = shortRev.Spec.Revision
-			cer = obj
+			selected = obj
 		}
 	}
-	return cer, nil
+	return selected, nil
 }
 
 func propertyListFromPropertiesAnnotation(raw string) ([]property.Property, error) {

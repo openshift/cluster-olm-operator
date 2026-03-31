@@ -171,7 +171,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		currentOCPMinorVersion,
 		cl.KubeClient,
 		cl.ClusterExtensionClient,
-		cl.ClusterExtensionRevisionClient,
+		cl.ClusterObjectSetClient,
 		cl.OperatorClient,
 		currentFeatureGates,
 		cc.EventRecorder.ForComponent("OLMIncompatibleOperatorController"),
