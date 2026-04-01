@@ -19,12 +19,15 @@ import (
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	authorizationv1 "k8s.io/api/authorization/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/component-base/cli"
 	utilflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
@@ -41,6 +44,10 @@ const (
 	olmProxyController = "OLMProxyController"
 	assetPath          = "/operand-assets"
 	manifestsPath      = "/manifests"
+
+	// operator-controller resource identifiers
+	operatorControllerNamespace      = "openshift-operator-controller"
+	operatorControllerServiceAccount = "operator-controller-controller-manager"
 )
 
 func main() {
@@ -86,6 +93,132 @@ func newStartCommand() *cobra.Command {
 	cmd.Use = "start"
 	cmd.Short = "Start the Cluster OLM Operator"
 	return cmd
+}
+
+// waitForOperatorControllerResources waits for the operator-controller namespace and
+// ServiceAccount to be created by the static resource controllers before attempting to
+// verify RBAC propagation. This prevents the SAR check from timing out when resources
+// don't exist yet.
+func waitForOperatorControllerResources(ctx context.Context, cl *clients.Clients, log klog.Logger) error {
+	log.Info("Waiting for operator-controller resources to be created", "namespace", operatorControllerNamespace, "serviceAccount", operatorControllerServiceAccount)
+
+	// Wait for namespace to exist
+	err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		_, err := cl.KubeClient.CoreV1().Namespaces().Get(ctx, operatorControllerNamespace, metav1.GetOptions{})
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				log.V(2).Info("Namespace does not exist yet, waiting", "namespace", operatorControllerNamespace)
+				return false, nil // Continue polling
+			}
+			// For other errors (network, permissions, etc.), fail fast
+			return false, err
+		}
+		log.Info("Namespace created", "namespace", operatorControllerNamespace)
+		return true, nil
+	})
+	if err != nil {
+		return fmt.Errorf("timeout waiting for namespace %s to be created: %w", operatorControllerNamespace, err)
+	}
+
+	// Wait for ServiceAccount to exist
+	err = wait.PollUntilContextTimeout(ctx, 1*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		_, err := cl.KubeClient.CoreV1().ServiceAccounts(operatorControllerNamespace).Get(ctx, operatorControllerServiceAccount, metav1.GetOptions{})
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				log.V(2).Info("ServiceAccount does not exist yet, waiting", "serviceAccount", operatorControllerServiceAccount)
+				return false, nil // Continue polling
+			}
+			// For other errors (network, permissions, etc.), fail fast
+			return false, err
+		}
+		log.Info("ServiceAccount created", "serviceAccount", operatorControllerServiceAccount)
+		return true, nil
+	})
+	if err != nil {
+		return fmt.Errorf("timeout waiting for ServiceAccount %s/%s to be created: %w", operatorControllerNamespace, operatorControllerServiceAccount, err)
+	}
+
+	return nil
+}
+
+// waitForOperatorControllerRBAC waits for the ClusterRoleBinding that grants the
+// operator-controller ServiceAccount access to the privileged SCC to be created and
+// propagated through the kube-apiserver's RBAC authorization cache.
+// This function assumes the namespace and ServiceAccount already exist.
+func waitForOperatorControllerRBAC(ctx context.Context, cl *clients.Clients, log klog.Logger) error {
+	// The ClusterRoleBinding name varies based on feature flags enabled in the Helm chart:
+	// - TechPreview/DevPreview: operator-controller-manager-admin-rolebinding
+	// - CustomNoUpgrade: operator-controller-manager-rolebinding
+	// We check for both possible names to handle all experimental feature set variants.
+	crbNames := []string{
+		"operator-controller-manager-admin-rolebinding", // TechPreview, DevPreview
+		"operator-controller-manager-rolebinding",       // CustomNoUpgrade
+	}
+
+	log.Info("Waiting for operator-controller RBAC to be created and propagated")
+
+	var foundCRB string
+	// Wait for ClusterRoleBinding to exist
+	err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		for _, crbName := range crbNames {
+			_, err := cl.KubeClient.RbacV1().ClusterRoleBindings().Get(ctx, crbName, metav1.GetOptions{})
+			if err == nil {
+				foundCRB = crbName
+				log.Info("ClusterRoleBinding created", "name", crbName)
+				return true, nil
+			}
+			// If this error is NOT NotFound (e.g., Forbidden, network error), fail fast
+			if !apierrors.IsNotFound(err) {
+				return false, err
+			}
+			// If it's NotFound, continue checking other candidates
+		}
+		// All ClusterRoleBindings returned NotFound, continue polling
+		log.V(2).Info("ClusterRoleBinding does not exist yet, waiting", "names", crbNames)
+		return false, nil // Continue polling
+	})
+	if err != nil {
+		return fmt.Errorf("timeout waiting for ClusterRoleBinding %v to be created: %w", crbNames, err)
+	}
+
+	// Poll using SubjectAccessReview to verify RBAC authorization cache propagation.
+	// The ClusterRoleBinding grants "use" permission on the "privileged" SCC.
+	// We verify that the operator-controller ServiceAccount can actually use the SCC
+	// by polling the authorization API until the permission is recognized.
+	log.Info("ClusterRoleBinding exists, polling RBAC authorization for SCC access", "name", foundCRB)
+	err = wait.PollUntilContextTimeout(ctx, 1*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+		sar := &authorizationv1.SubjectAccessReview{
+			Spec: authorizationv1.SubjectAccessReviewSpec{
+				User: fmt.Sprintf("system:serviceaccount:%s:%s", operatorControllerNamespace, operatorControllerServiceAccount),
+				ResourceAttributes: &authorizationv1.ResourceAttributes{
+					Verb:     "use",
+					Group:    "security.openshift.io",
+					Resource: "securitycontextconstraints",
+					Name:     "privileged",
+				},
+			},
+		}
+		result, err := cl.KubeClient.AuthorizationV1().SubjectAccessReviews().Create(ctx, sar, metav1.CreateOptions{})
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				log.V(2).Info("SubjectAccessReview API not ready yet, waiting")
+				return false, nil // Continue polling
+			}
+			// For other errors (network, permissions, etc.), fail fast
+			return false, err
+		}
+		if result.Status.Allowed {
+			log.Info("RBAC authorization confirmed: ServiceAccount can use privileged SCC")
+			return true, nil
+		}
+		log.V(2).Info("RBAC not yet propagated, waiting", "reason", result.Status.Reason)
+		return false, nil // Continue polling
+	})
+	if err != nil {
+		return fmt.Errorf("timeout waiting for RBAC authorization to propagate: %w", err)
+	}
+
+	return nil
 }
 
 func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error {
@@ -250,7 +383,29 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		}(c)
 	}
 
-	time.Sleep(10 * time.Second)
+	// Wait for RBAC to be properly configured before starting deployment controllers.
+	// This prevents SCC validation failures when operator-controller-controller-manager
+	// pods are created before the ServiceAccount has access to the privileged SCC.
+	// Only run this check in experimental feature sets (TechPreview, DevPreview, CustomNoUpgrade)
+	// where operator-controller is actually deployed. In Default mode, operator-controller
+	// is not deployed, so the ServiceAccount doesn't exist and the check would timeout.
+	// See: OCPBUGS-77899
+	if cb.UseExperimentalFeatureSet() {
+		// First, wait for the static resource controllers to create the namespace and ServiceAccount.
+		// The static controllers run asynchronously in goroutines, so we need to poll until the
+		// resources exist before we can verify RBAC propagation.
+		if err := waitForOperatorControllerResources(ctx, cl, log); err != nil {
+			return err
+		}
+
+		// Now that the resources exist, wait for the ClusterRoleBinding that grants SCC access
+		// to be created and propagated through the kube-apiserver's RBAC cache. This ensures
+		// the SCC admission plugin recognizes the permissions before we create the Deployment,
+		// preventing the race condition that caused flaky SCC denial events.
+		if err := waitForOperatorControllerRBAC(ctx, cl, log); err != nil {
+			return err
+		}
+	}
 
 	for _, c := range deploymentControllerList {
 		go func(c factory.Controller) {
