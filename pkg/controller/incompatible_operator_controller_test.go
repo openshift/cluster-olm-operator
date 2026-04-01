@@ -35,11 +35,11 @@ import (
 // based on the presence of incompatible operators
 func TestIncompatibleOperatorController_Sync(t *testing.T) {
 	type args struct {
-		clusterExtensions         []runtime.Object
-		clusterExtensionRevisions []runtime.Object
-		helmReleases              []runtime.Object
-		currentOCPVersion         string
-		boxCutterEnabled          bool
+		clusterExtensions []runtime.Object
+		clusterObjectSets []runtime.Object
+		helmReleases      []runtime.Object
+		currentOCPVersion string
+		boxCutterEnabled  bool
 	}
 	type wants struct {
 		expectErr         bool
@@ -82,8 +82,8 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 				clusterExtensions: []runtime.Object{
 					createClusterExtension("test-operator"),
 				},
-				clusterExtensionRevisions: []runtime.Object{
-					createRevision("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"4.18"}]`)),
+				clusterObjectSets: []runtime.Object{
+					createObjectSet("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"4.18"}]`)),
 				},
 				currentOCPVersion: "4.17.0",
 				boxCutterEnabled:  true,
@@ -99,8 +99,8 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 				clusterExtensions: []runtime.Object{
 					createClusterExtension("test-operator"),
 				},
-				clusterExtensionRevisions: []runtime.Object{
-					createRevision("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", nil),
+				clusterObjectSets: []runtime.Object{
+					createObjectSet("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", nil),
 				},
 				currentOCPVersion: "4.17.0",
 				boxCutterEnabled:  true,
@@ -116,8 +116,8 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 				clusterExtensions: []runtime.Object{
 					createClusterExtension("test-operator"),
 				},
-				clusterExtensionRevisions: []runtime.Object{
-					createRevision("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", olmPropertyAnnotation("")),
+				clusterObjectSets: []runtime.Object{
+					createObjectSet("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", olmPropertyAnnotation("")),
 				},
 				currentOCPVersion: "4.17.0",
 				boxCutterEnabled:  true,
@@ -135,8 +135,8 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 				clusterExtensions: []runtime.Object{
 					createClusterExtension("test-operator"),
 				},
-				clusterExtensionRevisions: []runtime.Object{
-					createRevision("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", olmPropertyAnnotation("abcd")),
+				clusterObjectSets: []runtime.Object{
+					createObjectSet("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", olmPropertyAnnotation("abcd")),
 				},
 				currentOCPVersion: "4.17.0",
 				boxCutterEnabled:  true,
@@ -154,8 +154,8 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 				clusterExtensions: []runtime.Object{
 					createClusterExtension("test-operator"),
 				},
-				clusterExtensionRevisions: []runtime.Object{
-					createRevision("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"4.17"}]`)),
+				clusterObjectSets: []runtime.Object{
+					createObjectSet("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"4.17"}]`)),
 				},
 				currentOCPVersion: "4.17.0",
 				boxCutterEnabled:  true,
@@ -173,9 +173,9 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 					createClusterExtension("test-operator"),
 					createClusterExtension("test-operator-2"),
 				},
-				clusterExtensionRevisions: []runtime.Object{
-					createRevision("test-operator-rev3", 3, "Active", "test-operator", "test-bundle-1.2", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"4.17"}]`)),
-					createRevision("test-operator-rev1", 1, "Active", "test-operator-2", "test-bundle-1.2", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"4.18"}]`)),
+				clusterObjectSets: []runtime.Object{
+					createObjectSet("test-operator-rev3", 3, "Active", "test-operator", "test-bundle-1.2", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"4.17"}]`)),
+					createObjectSet("test-operator-rev1", 1, "Active", "test-operator-2", "test-bundle-1.2", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"4.18"}]`)),
 				},
 				currentOCPVersion: "4.17.0",
 				boxCutterEnabled:  true,
@@ -192,11 +192,11 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 				clusterExtensions: []runtime.Object{
 					createClusterExtension("test-operator"),
 				},
-				clusterExtensionRevisions: []runtime.Object{
-					createRevision("test-operator-rev1", 1, "Archived", "test-operator", "test-bundle-1.0", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"4.17"}]`)),
+				clusterObjectSets: []runtime.Object{
+					createObjectSet("test-operator-rev1", 1, "Archived", "test-operator", "test-bundle-1.0", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"4.17"}]`)),
 					// set the non-latest revision to a compatible value to ensure the latest revision value is the one being used
-					createRevision("test-operator-rev2", 2, "Active", "test-operator", "test-bundle-1.1", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"4.18"}]`)),
-					createRevision("test-operator-rev3", 3, "Active", "test-operator", "test-bundle-1.2", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"4.17"}]`)),
+					createObjectSet("test-operator-rev2", 2, "Active", "test-operator", "test-bundle-1.1", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"4.18"}]`)),
+					createObjectSet("test-operator-rev3", 3, "Active", "test-operator", "test-bundle-1.2", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"4.17"}]`)),
 				},
 				currentOCPVersion: "4.17.0",
 				boxCutterEnabled:  true,
@@ -344,11 +344,11 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 			_ = operatorv1.AddToScheme(scheme)
 			_ = corev1.AddToScheme(scheme)
 
-			allObjects := slices.Concat(tt.args.clusterExtensions, tt.args.clusterExtensionRevisions)
+			allObjects := slices.Concat(tt.args.clusterExtensions, tt.args.clusterObjectSets)
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, allObjects...)
 
 			clusterExtensionClient := clients.NewClusterExtensionClient(dynClient)
-			clusterExtensionRevisionClient := clients.NewClusterExtensionRevisionClient(dynClient)
+			clusterObjectSetClient := clients.NewClusterObjectSetClient(dynClient)
 
 			// Setup kube client with Helm releases
 			kubeClient := fake.NewClientset(tt.args.helmReleases...)
@@ -362,22 +362,22 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 
 			// Create controller
 			controller := &incompatibleOperatorController{
-				name:                           "test-controller",
-				currentOCPMinorVersion:         &version,
-				kubeclient:                     kubeClient,
-				clusterExtensionClient:         clusterExtensionClient,
-				clusterExtensionRevisionClient: clusterExtensionRevisionClient,
-				operatorClient:                 operatorClient,
-				featureGate:                    featureGate,
-				logger:                         klog.NewKlogr(),
+				name:                   "test-controller",
+				currentOCPMinorVersion: &version,
+				kubeclient:             kubeClient,
+				clusterExtensionClient: clusterExtensionClient,
+				clusterObjectSetClient: clusterObjectSetClient,
+				operatorClient:         operatorClient,
+				featureGate:            featureGate,
+				logger:                 klog.NewKlogr(),
 			}
 
 			// Add objects to informer cache
 			for _, ce := range tt.args.clusterExtensions {
 				_ = clusterExtensionClient.Informer().Informer().GetIndexer().Add(ce)
 			}
-			for _, rev := range tt.args.clusterExtensionRevisions {
-				_ = clusterExtensionRevisionClient.Informer().Informer().GetIndexer().Add(rev)
+			for _, obj := range tt.args.clusterObjectSets {
+				_ = clusterObjectSetClient.Informer().Informer().GetIndexer().Add(obj)
 			}
 
 			// Call sync
@@ -415,7 +415,7 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 	}
 }
 
-func createRevision(name string, revision int64, lifecycleState string, ownerName string, bundleName string, annotations map[string]string) *unstructured.Unstructured {
+func createObjectSet(name string, revision int64, lifecycleState string, ownerName string, bundleName string, annotations map[string]string) *unstructured.Unstructured {
 	revAnnotations := map[string]interface{}{
 		bundleNameKey: bundleName,
 	}
@@ -426,7 +426,7 @@ func createRevision(name string, revision int64, lifecycleState string, ownerNam
 	return &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "olm.operatorframework.io/v1",
-			"kind":       "ClusterExtensionRevision",
+			"kind":       "ClusterObjectSet",
 			"metadata": map[string]interface{}{
 				"name":        name,
 				"annotations": revAnnotations,

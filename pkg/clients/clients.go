@@ -54,22 +54,22 @@ import (
 const defaultResyncPeriod = 10 * time.Minute
 
 type Clients struct {
-	KubeClient                     kubernetes.Interface
-	APIExtensionsClient            apiextensionsclient.Interface
-	DynamicClient                  dynamic.Interface
-	RESTMapper                     meta.RESTMapper
-	OperatorClient                 *OperatorClient
-	OperatorInformers              operatorinformers.SharedInformerFactory
-	ClusterExtensionClient         *ClusterExtensionClient
-	ClusterExtensionRevisionClient *ClusterExtensionRevisionClient
-	ClusterCatalogClient           *ClusterCatalogClient
-	ProxyClient                    *ProxyClient
-	ConfigClient                   configclient.Interface
-	KubeInformerFactory            informers.SharedInformerFactory
-	ConfigInformerFactory          configinformer.SharedInformerFactory
-	KubeInformersForNamespaces     v1helpers.KubeInformersForNamespaces
-	FeatureGatesAccessor           featuregates.FeatureGateAccess
-	FeatureGateMapper              internalfeatures.MapperInterface
+	KubeClient                 kubernetes.Interface
+	APIExtensionsClient        apiextensionsclient.Interface
+	DynamicClient              dynamic.Interface
+	RESTMapper                 meta.RESTMapper
+	OperatorClient             *OperatorClient
+	OperatorInformers          operatorinformers.SharedInformerFactory
+	ClusterExtensionClient     *ClusterExtensionClient
+	ClusterObjectSetClient     *ClusterObjectSetClient
+	ClusterCatalogClient       *ClusterCatalogClient
+	ProxyClient                *ProxyClient
+	ConfigClient               configclient.Interface
+	KubeInformerFactory        informers.SharedInformerFactory
+	ConfigInformerFactory      configinformer.SharedInformerFactory
+	KubeInformersForNamespaces v1helpers.KubeInformersForNamespaces
+	FeatureGatesAccessor       featuregates.FeatureGateAccess
+	FeatureGateMapper          internalfeatures.MapperInterface
 }
 
 func New(cc *controllercmd.ControllerContext) (*Clients, error) {
@@ -118,21 +118,21 @@ func New(cc *controllercmd.ControllerContext) (*Clients, error) {
 	configInformerFactory := configinformer.NewSharedInformerFactory(configClient, defaultResyncPeriod)
 
 	return &Clients{
-		KubeClient:                     kubeClient,
-		APIExtensionsClient:            apiExtensionsClient,
-		DynamicClient:                  dynClient,
-		RESTMapper:                     rm,
-		OperatorClient:                 opClient,
-		OperatorInformers:              operatorInformersFactory,
-		ClusterExtensionClient:         NewClusterExtensionClient(dynClient),
-		ClusterCatalogClient:           NewClusterCatalogClient(dynClient),
-		ClusterExtensionRevisionClient: NewClusterExtensionRevisionClient(dynClient),
-		ProxyClient:                    NewProxyClient(configInformerFactory),
-		ConfigClient:                   configClient,
-		KubeInformerFactory:            informers.NewSharedInformerFactory(kubeClient, defaultResyncPeriod),
-		ConfigInformerFactory:          configInformerFactory,
-		FeatureGatesAccessor:           setupFeatureGatesAccessor(kubeClient, configInformerFactory, cc.OperatorNamespace),
-		FeatureGateMapper:              internalfeatures.NewMapper(),
+		KubeClient:             kubeClient,
+		APIExtensionsClient:    apiExtensionsClient,
+		DynamicClient:          dynClient,
+		RESTMapper:             rm,
+		OperatorClient:         opClient,
+		OperatorInformers:      operatorInformersFactory,
+		ClusterExtensionClient: NewClusterExtensionClient(dynClient),
+		ClusterCatalogClient:   NewClusterCatalogClient(dynClient),
+		ClusterObjectSetClient: NewClusterObjectSetClient(dynClient),
+		ProxyClient:            NewProxyClient(configInformerFactory),
+		ConfigClient:           configClient,
+		KubeInformerFactory:    informers.NewSharedInformerFactory(kubeClient, defaultResyncPeriod),
+		ConfigInformerFactory:  configInformerFactory,
+		FeatureGatesAccessor:   setupFeatureGatesAccessor(kubeClient, configInformerFactory, cc.OperatorNamespace),
+		FeatureGateMapper:      internalfeatures.NewMapper(),
 	}, nil
 }
 
@@ -142,7 +142,7 @@ func (c *Clients) StartInformers(ctx context.Context) {
 	c.ConfigInformerFactory.Start(ctx.Done())
 	c.OperatorInformers.Start(ctx.Done())
 	c.ClusterExtensionClient.factory.Start(ctx.Done())
-	c.ClusterExtensionRevisionClient.factory.Start(ctx.Done())
+	c.ClusterObjectSetClient.factory.Start(ctx.Done())
 	c.ClusterCatalogClient.factory.Start(ctx.Done())
 	c.ProxyClient.factory.Start(ctx.Done())
 	if c.KubeInformersForNamespaces != nil {
@@ -218,21 +218,21 @@ func NewClusterExtensionClient(dynClient dynamic.Interface) *ClusterExtensionCli
 	}
 }
 
-type ClusterExtensionRevisionClient struct {
+type ClusterObjectSetClient struct {
 	factory  dynamicinformer.DynamicSharedInformerFactory
 	informer informers.GenericInformer
 }
 
-func (c ClusterExtensionRevisionClient) Informer() informers.GenericInformer {
+func (c ClusterObjectSetClient) Informer() informers.GenericInformer {
 	return c.informer
 }
 
-func NewClusterExtensionRevisionClient(dynClient dynamic.Interface) *ClusterExtensionRevisionClient {
+func NewClusterObjectSetClient(dynClient dynamic.Interface) *ClusterObjectSetClient {
 	infFact := dynamicinformer.NewDynamicSharedInformerFactory(dynClient, defaultResyncPeriod)
-	clusterExtensionRevisionGVR := ocv1.GroupVersion.WithResource("clusterextensionrevisions")
-	inf := infFact.ForResource(clusterExtensionRevisionGVR)
+	clusterObjectSetGVR := ocv1.GroupVersion.WithResource("clusterobjectsets")
+	inf := infFact.ForResource(clusterObjectSetGVR)
 
-	return &ClusterExtensionRevisionClient{
+	return &ClusterObjectSetClient{
 		factory:  infFact,
 		informer: inf,
 	}
