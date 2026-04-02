@@ -45,7 +45,6 @@ func TestRenderHelmTemplate(t *testing.T) {
 
 	compareDir := os.Getenv("HELM_OUTPUT")
 	require.NotEmpty(t, compareDir)
-	os.Remove(compareDir)
 
 	compareFile := filepath.Join(compareDir, "hello-world.yaml")
 	compareData, err := os.ReadFile(compareFile)
