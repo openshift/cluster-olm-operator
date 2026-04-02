@@ -325,8 +325,8 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 				clusterExtensions: []runtime.Object{
 					createClusterExtension("test-operator"),
 				},
-				clusterExtensionRevisions: []runtime.Object{
-					createRevision("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"5.0"}]`)),
+				clusterObjectSets: []runtime.Object{
+					createObjectSet("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"5.0"}]`)),
 				},
 				currentOCPVersion: "4.23.0",
 				boxCutterEnabled:  true,
@@ -343,8 +343,8 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 				clusterExtensions: []runtime.Object{
 					createClusterExtension("test-operator"),
 				},
-				clusterExtensionRevisions: []runtime.Object{
-					createRevision("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"5.1"}]`)),
+				clusterObjectSets: []runtime.Object{
+					createObjectSet("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"5.1"}]`)),
 				},
 				currentOCPVersion: "4.23.0",
 				boxCutterEnabled:  true,
@@ -360,8 +360,8 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 				clusterExtensions: []runtime.Object{
 					createClusterExtension("test-operator"),
 				},
-				clusterExtensionRevisions: []runtime.Object{
-					createRevision("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"5.1"}]`)),
+				clusterObjectSets: []runtime.Object{
+					createObjectSet("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"5.1"}]`)),
 				},
 				currentOCPVersion: "5.0.0",
 				boxCutterEnabled:  true,
