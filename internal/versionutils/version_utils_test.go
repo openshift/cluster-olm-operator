@@ -103,25 +103,25 @@ func TestIsOperatorMaxOCPVersionCompatibleWithCluster(t *testing.T) {
 		want                   bool
 	}{
 		{
-			name:                   "maxOCPVersion is 4.18, currentOCPMinorVersion is 4.17 => compatible",
+			name:                   "maxOCPVersion is 4.18, currentOCPMinorVersion is 4.17 => upgradable",
 			operatorMaxOCPVersion:  semver.Version{Major: 4, Minor: 18, Patch: 0},
 			currentOCPMinorVersion: semver.Version{Major: 4, Minor: 17, Patch: 0},
 			want:                   true,
 		},
 		{
-			name:                   "maxOCPVersion is 4.18, currentOCPMinorVersion is 4.18 => incompatible",
+			name:                   "maxOCPVersion is 4.18, currentOCPMinorVersion is 4.18 => not upgradable",
 			operatorMaxOCPVersion:  semver.Version{Major: 4, Minor: 18, Patch: 0},
 			currentOCPMinorVersion: semver.Version{Major: 4, Minor: 18, Patch: 0},
 			want:                   false,
 		},
 		{
-			name:                   "maxOCPVersion is 4.18, currentOCPMinorVersion is 4.19 => incompatible",
+			name:                   "maxOCPVersion is 4.18, currentOCPMinorVersion is 4.19 => not upgradable",
 			operatorMaxOCPVersion:  semver.Version{Major: 4, Minor: 18, Patch: 0},
 			currentOCPMinorVersion: semver.Version{Major: 4, Minor: 19, Patch: 0},
 			want:                   false,
 		},
 		{
-			name:                   "maxOCPVersion is 4.23, currentOCPMinorVersion is 4.22 => compatible",
+			name:                   "maxOCPVersion is 4.23, currentOCPMinorVersion is 4.22 => upgradable",
 			operatorMaxOCPVersion:  semver.Version{Major: 4, Minor: 23, Patch: 0},
 			currentOCPMinorVersion: semver.Version{Major: 4, Minor: 22, Patch: 0},
 			want:                   true,
@@ -129,55 +129,55 @@ func TestIsOperatorMaxOCPVersionCompatibleWithCluster(t *testing.T) {
 		// 4.23/5.0/5.1 upgrade edge matrix.
 		// 4.23 and 5.0 are co-released equivalents; the only upgrade target from either is 5.1.
 		{
-			name:                   "maxOCPVersion is 4.23, currentOCPMinorVersion is 4.23 => incompatible",
+			name:                   "maxOCPVersion is 4.23, currentOCPMinorVersion is 4.23 => not upgradable",
 			operatorMaxOCPVersion:  semver.Version{Major: 4, Minor: 23, Patch: 0},
 			currentOCPMinorVersion: semver.Version{Major: 4, Minor: 23, Patch: 0},
 			want:                   false,
 		},
 		{
-			name:                   "maxOCPVersion is 5.0, currentOCPMinorVersion is 4.23 => incompatible (next upgrade target is 5.1)",
+			name:                   "maxOCPVersion is 5.0, currentOCPMinorVersion is 4.23 => not upgradable (next upgrade target is 5.1)",
 			operatorMaxOCPVersion:  semver.Version{Major: 5, Minor: 0, Patch: 0},
 			currentOCPMinorVersion: semver.Version{Major: 4, Minor: 23, Patch: 0},
 			want:                   false,
 		},
 		{
-			name:                   "maxOCPVersion is 5.1, currentOCPMinorVersion is 4.23 => compatible",
+			name:                   "maxOCPVersion is 5.1, currentOCPMinorVersion is 4.23 => upgradable",
 			operatorMaxOCPVersion:  semver.Version{Major: 5, Minor: 1, Patch: 0},
 			currentOCPMinorVersion: semver.Version{Major: 4, Minor: 23, Patch: 0},
 			want:                   true,
 		},
 		{
-			name:                   "maxOCPVersion is 4.23, currentOCPMinorVersion is 5.0 => incompatible",
+			name:                   "maxOCPVersion is 4.23, currentOCPMinorVersion is 5.0 => not upgradable",
 			operatorMaxOCPVersion:  semver.Version{Major: 4, Minor: 23, Patch: 0},
 			currentOCPMinorVersion: semver.Version{Major: 5, Minor: 0, Patch: 0},
 			want:                   false,
 		},
 		{
-			name:                   "maxOCPVersion is 5.0, currentOCPMinorVersion is 5.0 => incompatible",
+			name:                   "maxOCPVersion is 5.0, currentOCPMinorVersion is 5.0 => not upgradable",
 			operatorMaxOCPVersion:  semver.Version{Major: 5, Minor: 0, Patch: 0},
 			currentOCPMinorVersion: semver.Version{Major: 5, Minor: 0, Patch: 0},
 			want:                   false,
 		},
 		{
-			name:                   "maxOCPVersion is 5.1, currentOCPMinorVersion is 5.0 => compatible",
+			name:                   "maxOCPVersion is 5.1, currentOCPMinorVersion is 5.0 => upgradable",
 			operatorMaxOCPVersion:  semver.Version{Major: 5, Minor: 1, Patch: 0},
 			currentOCPMinorVersion: semver.Version{Major: 5, Minor: 0, Patch: 0},
 			want:                   true,
 		},
 		{
-			name:                   "maxOCPVersion is 4.23, currentOCPMinorVersion is 5.1 => incompatible",
+			name:                   "maxOCPVersion is 4.23, currentOCPMinorVersion is 5.1 => not upgradable",
 			operatorMaxOCPVersion:  semver.Version{Major: 4, Minor: 23, Patch: 0},
 			currentOCPMinorVersion: semver.Version{Major: 5, Minor: 1, Patch: 0},
 			want:                   false,
 		},
 		{
-			name:                   "maxOCPVersion is 5.0, currentOCPMinorVersion is 5.1 => incompatible",
+			name:                   "maxOCPVersion is 5.0, currentOCPMinorVersion is 5.1 => not upgradable",
 			operatorMaxOCPVersion:  semver.Version{Major: 5, Minor: 0, Patch: 0},
 			currentOCPMinorVersion: semver.Version{Major: 5, Minor: 1, Patch: 0},
 			want:                   false,
 		},
 		{
-			name:                   "maxOCPVersion is 5.1, currentOCPMinorVersion is 5.1 => incompatible",
+			name:                   "maxOCPVersion is 5.1, currentOCPMinorVersion is 5.1 => not upgradable",
 			operatorMaxOCPVersion:  semver.Version{Major: 5, Minor: 1, Patch: 0},
 			currentOCPMinorVersion: semver.Version{Major: 5, Minor: 1, Patch: 0},
 			want:                   false,

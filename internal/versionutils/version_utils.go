@@ -66,17 +66,17 @@ func ToAllowedSemver(data []byte) (*semver.Version, error) {
 var ocpVersion500 = semver.Version{Major: 5, Minor: 0, Patch: 0}
 
 // IsOperatorMaxOCPVersionCompatibleWithCluster compares the operator's maximum openshift version with the current cluster version
-// and returns whether the operator is compatible with the next cluster version. For example,
+// and returns whether the operator is upgradable to the next cluster version. For example,
 //
-//	if maxOCPVersion is 4.18 and currentOCPMinorVersion is 4.17 => compatible
-//	if maxOCPVersion is 4.18 and currentOCPMinorVersion is 4.18 => incompatible
-//	if maxOCPVersion is 4.18 and currentOCPMinorVersion is 4.19 => incompatible
-//	if maxOCPVersion is 5.0  and currentOCPMinorVersion is 4.23 => incompatible (next upgrade target is 5.1)
-//	if maxOCPVersion is 5.1  and currentOCPMinorVersion is 4.23 => compatible
+//	if maxOCPVersion is 4.18 and currentOCPMinorVersion is 4.17 => upgradable
+//	if maxOCPVersion is 4.18 and currentOCPMinorVersion is 4.18 => not upgradable
+//	if maxOCPVersion is 4.18 and currentOCPMinorVersion is 4.19 => not upgradable
+//	if maxOCPVersion is 5.0  and currentOCPMinorVersion is 4.23 => not upgradable (next upgrade target is 5.1)
+//	if maxOCPVersion is 5.1  and currentOCPMinorVersion is 4.23 => upgradable
 func IsOperatorMaxOCPVersionCompatibleWithCluster(operatorMaxOCPVersion, currentOCPMinorVersion semver.Version) bool {
 	effective := currentOCPMinorVersion
 	// OCP 4.23 and 5.0 are co-released equivalents; the only upgrade target from either is 5.1.
-	// Treat 4.23 as 5.0 so that operators must declare maxOCP > 5.0 (i.e. >= 5.1) to be compatible.
+	// Treat 4.23 as 5.0 so that operators must declare maxOCP > 5.0 (i.e. >= 5.1) to be upgradable.
 	if currentOCPMinorVersion.Major == 4 && currentOCPMinorVersion.Minor == 23 {
 		effective = ocpVersion500
 	}
