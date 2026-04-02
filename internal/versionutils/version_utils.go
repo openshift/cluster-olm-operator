@@ -71,6 +71,9 @@ var ocpVersion500 = semver.Version{Major: 5, Minor: 0, Patch: 0}
 //	if maxOCPVersion is 4.18 and currentOCPMinorVersion is 4.17 => upgradable
 //	if maxOCPVersion is 4.18 and currentOCPMinorVersion is 4.18 => not upgradable
 //	if maxOCPVersion is 4.18 and currentOCPMinorVersion is 4.19 => not upgradable
+//
+// NOTE: OCP 4.23 and 5.0 are co-released equivalents so the only upgrade target from either is 5.1:
+//
 //	if maxOCPVersion is 5.0  and currentOCPMinorVersion is 4.23 => not upgradable (next upgrade target is 5.1)
 //	if maxOCPVersion is 5.1  and currentOCPMinorVersion is 4.23 => upgradable
 func IsOperatorMaxOCPVersionCompatibleWithCluster(operatorMaxOCPVersion, currentOCPMinorVersion semver.Version) bool {
