@@ -95,6 +95,14 @@ rules:
       - get
       - list
       - watch
+  # necessary for RBAC verification during operator startup
+  # used to verify ClusterRoleBinding propagation before deploying workloads
+  - apiGroups:
+      - authorization.k8s.io
+    resources:
+      - subjectaccessreviews
+    verbs:
+      - create
   # necessary for OCP monitoring
   # together with endpoints, services, pods
   - apiGroups:
