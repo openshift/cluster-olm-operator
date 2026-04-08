@@ -28,29 +28,22 @@ func (b *Builder) renderHelmTemplate(helmPath, manifestDir string) error {
 	log := klog.FromContext(context.Background()).WithName("renderHelmTemplate")
 	log.Info("Rendering Helm template", "source", helmPath, "destination", manifestDir)
 
-	useExperimental := b.UseExperimentalFeatureSet()
+	// Get current feature gates once and reuse
 	clusterGatesConfig, err := b.CurrentFeatureGates()
 	if err != nil {
 		return fmt.Errorf("CurrentFeatureGates failed: %w", err)
 	}
 
-	// Gather feature-gate configuration first, to see if we want to use
-	// the experimental values file.
-	featureGateValues, err := upstreamFeatureGates(
-		helmvalues.NewHelmValues(),
-		clusterGatesConfig,
-		b.Clients.FeatureGateMapper.DownstreamFeatureGates(),
-		b.Clients.FeatureGateMapper.UpstreamForDownstream)
+	// Check if any feature gates are enabled (without calling upstreamFeatureGates)
+	hasEnabledFeatureGates, err := b.HasEnabledDownstreamFeatureGates(clusterGatesConfig)
 	if err != nil {
-		return err
+		return fmt.Errorf("HasEnabledDownstreamFeatureGates failed: %w", err)
 	}
-	hasEnabledFeatureGates, err := featureGateValues.HasEnabledFeatureGates()
-	if err != nil {
-		return err
-	}
-	if hasEnabledFeatureGates {
-		useExperimental = true
-	}
+
+	// Determine if we should use experimental values file based on FeatureSet
+	// OR enabled feature gates. This uses the same logic as the RBAC wait check
+	// in main.go to ensure consistency.
+	useExperimental := b.UseExperimentalFeatureSet() || hasEnabledFeatureGates
 
 	// Determine and generate the values from the files (equivalent to --values)
 	valuesFiles := []string{filepath.Join(helmPath, "openshift.yaml")}
@@ -65,9 +58,8 @@ func (b *Builder) renderHelmTemplate(helmPath, manifestDir string) error {
 		return fmt.Errorf("error from GatherHelmValuesFromFiles: %w", err)
 	}
 
-	// Add the upstreamFeatureGates - this is run a second time to update the existing
-	// list rather than create a new list. Using AddValues() to merge featureGateValues
-	// from above would not allow overriding of enabled/disabled features.
+	// Add the upstreamFeatureGates to populate the actual helm values with enabled/disabled features.
+	// This is called only once here to merge feature gates into the values loaded from files.
 	values, err = upstreamFeatureGates(
 		values,
 		clusterGatesConfig,

@@ -383,14 +383,16 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		}(c)
 	}
 
-	// Wait for RBAC to be properly configured before starting deployment controllers.
-	// This prevents SCC validation failures when operator-controller-controller-manager
-	// pods are created before the ServiceAccount has access to the privileged SCC.
-	// Only run this check in experimental feature sets (TechPreview, DevPreview, CustomNoUpgrade)
-	// where operator-controller is actually deployed. In Default mode, operator-controller
-	// is not deployed, so the ServiceAccount doesn't exist and the check would timeout.
+	// Wait for operator-controller RBAC if it will be deployed.
+	// Must match the deployment decision in renderHelmTemplate (helm.go).
 	// See: OCPBUGS-77899
-	if cb.UseExperimentalFeatureSet() {
+	hasEnabledFeatureGates, err := cb.HasEnabledDownstreamFeatureGates(currentFeatureGates)
+	if err != nil {
+		return fmt.Errorf("unable to determine if operator-controller will be deployed: %w", err)
+	}
+	shouldWaitForOperatorController := cb.UseExperimentalFeatureSet() || hasEnabledFeatureGates
+
+	if shouldWaitForOperatorController {
 		// First, wait for the static resource controllers to create the namespace and ServiceAccount.
 		// The static controllers run asynchronously in goroutines, so we need to poll until the
 		// resources exist before we can verify RBAC propagation.
