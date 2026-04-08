@@ -32,7 +32,7 @@ import (
 )
 
 // TestIncompatibleOperatorController_Sync tests the sync method which updates operator status conditions
-// based on the presence of incompatible operators
+// based on the presence of not upgradable operators
 func TestIncompatibleOperatorController_Sync(t *testing.T) {
 	type args struct {
 		clusterExtensions []runtime.Object
@@ -77,7 +77,7 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 			},
 		},
 		{
-			name: "boxcutter: compatible operator",
+			name: "boxcutter: upgradable operator",
 			args: args{
 				clusterExtensions: []runtime.Object{
 					createClusterExtension("test-operator"),
@@ -94,7 +94,7 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 			},
 		},
 		{
-			name: "boxcutter: operator without olm.properties is interpreted as compatible",
+			name: "boxcutter: operator without olm.properties is interpreted as upgradable",
 			args: args{
 				clusterExtensions: []runtime.Object{
 					createClusterExtension("test-operator"),
@@ -149,7 +149,7 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 			},
 		},
 		{
-			name: "boxcutter: incompatible operator found",
+			name: "boxcutter: not upgradable operator found",
 			args: args{
 				clusterExtensions: []runtime.Object{
 					createClusterExtension("test-operator"),
@@ -167,7 +167,7 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 			},
 		},
 		{
-			name: "boxcutter: incompatible operator with multiple revisions found",
+			name: "boxcutter: not upgradable operator with multiple revisions found",
 			args: args{
 				clusterExtensions: []runtime.Object{
 					createClusterExtension("test-operator"),
@@ -187,14 +187,14 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 			},
 		},
 		{
-			name: "boxcutter: compatible and incompatible operators",
+			name: "boxcutter: upgradable and not upgradable operators",
 			args: args{
 				clusterExtensions: []runtime.Object{
 					createClusterExtension("test-operator"),
 				},
 				clusterObjectSets: []runtime.Object{
 					createObjectSet("test-operator-rev1", 1, "Archived", "test-operator", "test-bundle-1.0", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"4.17"}]`)),
-					// set the non-latest revision to a compatible value to ensure the latest revision value is the one being used
+					// set the non-latest revision to an upgradable value to ensure the latest revision value is the one being used
 					createObjectSet("test-operator-rev2", 2, "Active", "test-operator", "test-bundle-1.1", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"4.18"}]`)),
 					createObjectSet("test-operator-rev3", 3, "Active", "test-operator", "test-bundle-1.2", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"4.17"}]`)),
 				},
@@ -208,7 +208,7 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 			},
 		},
 		{
-			name: "helm: compatible operator",
+			name: "helm: upgradable operator",
 			args: args{
 				clusterExtensions: []runtime.Object{
 					createClusterExtension("test-operator"),
@@ -225,7 +225,7 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 			},
 		},
 		{
-			name: "helm: operator without olm.properties is interpreted as compatible",
+			name: "helm: operator without olm.properties is interpreted as upgradable",
 			args: args{
 				clusterExtensions: []runtime.Object{
 					createClusterExtension("test-operator"),
@@ -242,7 +242,7 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 			},
 		},
 		{
-			name: "helm: incompatible operator found",
+			name: "helm: not upgradable operator found",
 			args: args{
 				clusterExtensions: []runtime.Object{
 					createClusterExtension("test-operator"),
@@ -260,7 +260,7 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 			},
 		},
 		{
-			name: "helm: compatible and incompatible operators",
+			name: "helm: upgradable and not upgradable operators",
 			args: args{
 				clusterExtensions: []runtime.Object{
 					createClusterExtension("test-operator"),
@@ -315,6 +315,112 @@ func TestIncompatibleOperatorController_Sync(t *testing.T) {
 				conditionStatus:   operatorv1.ConditionFalse,
 				conditionReason:   reasonFailureGettingExtension,
 				messageContaining: "could not convert olm.properties",
+			},
+		},
+		// 4.23/5.0/5.1 upgrade edge cases.
+		// 4.23 and 5.0 are co-released equivalents; the only upgrade target from either is 5.1.
+		{
+			name: "boxcutter: maxOCPVersion=5.0 with cluster at 4.23 is not upgradable (next upgrade target is 5.1)",
+			args: args{
+				clusterExtensions: []runtime.Object{
+					createClusterExtension("test-operator"),
+				},
+				clusterObjectSets: []runtime.Object{
+					createObjectSet("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"5.0"}]`)),
+				},
+				currentOCPVersion: "4.23.0",
+				boxCutterEnabled:  true,
+			},
+			wants: wants{
+				conditionStatus:   operatorv1.ConditionFalse,
+				conditionReason:   reasonIncompatibleOperatorsInstalled,
+				messageContaining: "test-bundle-1.0",
+			},
+		},
+		{
+			name: "boxcutter: maxOCPVersion=5.1 with cluster at 4.23 is upgradable",
+			args: args{
+				clusterExtensions: []runtime.Object{
+					createClusterExtension("test-operator"),
+				},
+				clusterObjectSets: []runtime.Object{
+					createObjectSet("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"5.1"}]`)),
+				},
+				currentOCPVersion: "4.23.0",
+				boxCutterEnabled:  true,
+			},
+			wants: wants{
+				conditionStatus: operatorv1.ConditionTrue,
+				conditionReason: "",
+			},
+		},
+		{
+			name: "boxcutter: maxOCPVersion=5.1 with cluster at 5.0 is upgradable",
+			args: args{
+				clusterExtensions: []runtime.Object{
+					createClusterExtension("test-operator"),
+				},
+				clusterObjectSets: []runtime.Object{
+					createObjectSet("test-operator-rev1", 1, "Active", "test-operator", "test-bundle-1.0", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"5.1"}]`)),
+				},
+				currentOCPVersion: "5.0.0",
+				boxCutterEnabled:  true,
+			},
+			wants: wants{
+				conditionStatus: operatorv1.ConditionTrue,
+				conditionReason: "",
+			},
+		},
+		{
+			name: "helm: maxOCPVersion=5.0 with cluster at 4.23 is not upgradable (next upgrade target is 5.1)",
+			args: args{
+				clusterExtensions: []runtime.Object{
+					createClusterExtension("test-operator"),
+				},
+				helmReleases: []runtime.Object{
+					createHelmReleaseSecret("test-operator", "test-bundle-1.0", "test-package", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"5.0"}]`)),
+				},
+				currentOCPVersion: "4.23.0",
+				boxCutterEnabled:  false,
+			},
+			wants: wants{
+				conditionStatus:   operatorv1.ConditionFalse,
+				conditionReason:   reasonIncompatibleOperatorsInstalled,
+				messageContaining: "test-bundle-1.0",
+			},
+		},
+		{
+			name: "helm: maxOCPVersion=5.1 with cluster at 4.23 is upgradable",
+			args: args{
+				clusterExtensions: []runtime.Object{
+					createClusterExtension("test-operator"),
+				},
+				helmReleases: []runtime.Object{
+					createHelmReleaseSecret("test-operator", "test-bundle-1.0", "test-package", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"5.1"}]`)),
+				},
+				currentOCPVersion: "4.23.0",
+				boxCutterEnabled:  false,
+			},
+			wants: wants{
+				conditionStatus: operatorv1.ConditionTrue,
+				conditionReason: "",
+			},
+		},
+		{
+			name: "helm: maxOCPVersion=5.1 with cluster at 5.0 is upgradable",
+			args: args{
+				clusterExtensions: []runtime.Object{
+					createClusterExtension("test-operator"),
+				},
+				helmReleases: []runtime.Object{
+					createHelmReleaseSecret("test-operator", "test-bundle-1.0", "test-package", olmPropertyAnnotation(`[{"type":"olm.maxOpenShiftVersion","value":"5.1"}]`)),
+				},
+				currentOCPVersion: "5.0.0",
+				boxCutterEnabled:  false,
+			},
+			wants: wants{
+				conditionStatus: operatorv1.ConditionTrue,
+				conditionReason: "",
 			},
 		},
 	}

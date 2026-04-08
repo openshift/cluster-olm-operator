@@ -145,7 +145,7 @@ func (c *incompatibleOperatorController) getIncompatibleOperatorsFromHelmRelease
 	store := c.buildHelmStore(c.kubeclient.CoreV1().Secrets("openshift-operator-controller"))
 
 	var errs []error
-	// Get all ClusterExtensions incompatible with next Y-stream
+	// Get all ClusterExtensions not upgradable to next Y-stream
 	for _, obj := range ceList {
 		metaObj, ok := obj.(metav1.Object)
 		if !ok {
@@ -205,7 +205,7 @@ func (c *incompatibleOperatorController) getIncompatibleOperatorsFromObjectSet()
 	}
 
 	var errs []error
-	// Get all ClusterExtensions incompatible with next Y-stream
+	// Get all ClusterExtensions not upgradable to next Y-stream
 	for _, obj := range ceList {
 		metaObj, ok := obj.(metav1.Object)
 		if !ok {
@@ -305,9 +305,9 @@ func (c *incompatibleOperatorController) checkIncompatibility(logger logr.Logger
 				continue
 			}
 
-			// 1. maxOCPVersion is 4.18, currentOCPMinorVersion is 4.17 => compatible
-			// 2. maxOCPVersion is 4.18, currentOCPMinorVersion is 4.18 => incompatible
-			// 3. maxOCPVersion is 4.18, currentOCPMinorVersion is 4.19 => incompatible
+			// 1. maxOCPVersion is 4.18, currentOCPMinorVersion is 4.17 => upgradable
+			// 2. maxOCPVersion is 4.18, currentOCPMinorVersion is 4.18 => not upgradable
+			// 3. maxOCPVersion is 4.18, currentOCPMinorVersion is 4.19 => not upgradable
 			isIncompatible = !versionutils.IsOperatorMaxOCPVersionCompatibleWithCluster(*maxOCPVersion, *c.currentOCPMinorVersion)
 		}
 	}
