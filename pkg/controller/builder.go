@@ -183,6 +183,22 @@ func (b *Builder) CurrentFeatureGates() (featuregates.FeatureGate, error) {
 	return NewFeatureGate(enabledFeatures, disabledFeatures), nil
 }
 
+// HasEnabledDownstreamFeatureGates checks if any downstream feature gates
+// that map to operator-controller or catalogd are enabled in the cluster.
+// Returns true if at least one relevant feature gate is enabled.
+//
+// Callers should combine this result with UseExperimentalFeatureSet()
+// to determine if operator-controller should be deployed.
+func (b *Builder) HasEnabledDownstreamFeatureGates(clusterGatesConfig featuregates.FeatureGate) (bool, error) {
+	// Check if any downstream feature gates are enabled
+	for _, gate := range b.Clients.FeatureGateMapper.DownstreamFeatureGates() {
+		if clusterGatesConfig.Enabled(gate) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // TODO: Remove the featureGate stuff to use the real thing
 type featureGate struct {
 	enabled  []configv1.FeatureGateName
