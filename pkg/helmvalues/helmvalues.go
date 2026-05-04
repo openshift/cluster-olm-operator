@@ -82,6 +82,22 @@ func (v *HelmValues) SetStringValue(location string, newValue string) error {
 	return unstructured.SetNestedField(v.values, newValue, ss...)
 }
 
+func (v *HelmValues) SetIntValue(location string, newValue int) error {
+	if location == "" {
+		return errors.New("location string has no locations")
+	}
+	ss := strings.Split(location, ".")
+	return unstructured.SetNestedField(v.values, int64(newValue), ss...)
+}
+
+func (v *HelmValues) SetBoolValue(location string, newValue bool) error {
+	if location == "" {
+		return errors.New("location string has no locations")
+	}
+	ss := strings.Split(location, ".")
+	return unstructured.SetNestedField(v.values, newValue, ss...)
+}
+
 func (v *HelmValues) AddListValue(location string, newValue string) error {
 	if location == "" {
 		return errors.New("location string has no locations")

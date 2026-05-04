@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/cluster-olm-operator/pkg/helmvalues"
 
 	yaml3 "gopkg.in/yaml.v3"
@@ -78,6 +79,34 @@ func (b *Builder) renderHelmTemplate(helmPath, manifestDir string) error {
 	}
 	if err := values.SetStringValue("options.operatorController.deployment.image", os.Getenv("OPERATOR_CONTROLLER_IMAGE")); err != nil {
 		return fmt.Errorf("error setting OPERATOR_CONTROLLER_IMAGE: %w", err)
+	}
+
+	// On HighlyAvailable topologies scale to 2 replicas and enable the PDB so that rolling
+	// updates never leave zero running pods. On SingleReplica (SNO) / External topologies
+	// the manifest defaults (replicas=1, PDB disabled) are kept as-is.
+	if b.Infrastructure != nil && isHighlyAvailableTopology(b.Infrastructure) {
+		log.Info("HighlyAvailable topology detected, setting replicas=2 and enabling PDB")
+		haOverrides := []struct {
+			key   string
+			value interface{}
+		}{
+			{"options.catalogd.deployment.replicas", 2},
+			{"options.operatorController.deployment.replicas", 2},
+			{"options.catalogd.podDisruptionBudget.enabled", true},
+			{"options.operatorController.podDisruptionBudget.enabled", true},
+		}
+		for _, o := range haOverrides {
+			var err error
+			switch v := o.value.(type) {
+			case int:
+				err = values.SetIntValue(o.key, v)
+			case bool:
+				err = values.SetBoolValue(o.key, v)
+			}
+			if err != nil {
+				return fmt.Errorf("error setting %s: %w", o.key, err)
+			}
+		}
 	}
 
 	log.Info("Calculated values", "values", values.GetValues())
@@ -263,6 +292,16 @@ func sanitizeFilename(name string) string {
 	// Replace invalid characters with hyphens
 	reg := regexp.MustCompile(`[^a-zA-Z0-9.-]`)
 	return reg.ReplaceAllString(name, "-")
+}
+
+func isHighlyAvailableTopology(infra *configv1.Infrastructure) bool {
+	switch infra.Status.ControlPlaneTopology {
+	case configv1.HighlyAvailableTopologyMode,
+		configv1.HighlyAvailableArbiterMode,
+		configv1.DualReplicaTopologyMode:
+		return true
+	}
+	return false
 }
 
 func writeDocument(filePath, content string) error {
