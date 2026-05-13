@@ -1,6 +1,8 @@
 run:
   # Default timeout is 1m, up to give more room
-  timeout: 4m
+  timeout: 10m
+  # Limit concurrency to reduce memory usage in CI
+  concurrency: 2
 
 linters:
   enable:
