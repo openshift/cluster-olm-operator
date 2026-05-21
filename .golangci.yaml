@@ -1,6 +1,6 @@
 run:
-  # Default timeout is 1m, up to give more room
-  timeout: 4m
+  # Default timeout is 1m, increased for slower CI environments
+  timeout: 10m
 
 linters:
   enable:
