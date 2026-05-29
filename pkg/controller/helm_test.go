@@ -76,38 +76,44 @@ func TestRenderHelmTemplate(t *testing.T) {
 	require.Equal(t, compareData, testData)
 }
 
-func TestApplyCatalogImageTagOverride(t *testing.T) {
+func TestCatalogImageTagOverride(t *testing.T) {
 	const versionKey = "options.openshift.catalogs.version"
 
 	tests := []struct {
-		name        string
-		initialTag  string // set at versionKey before the call; empty means key is absent
-		clusterTag  string
-		expectedTag string // expected value at versionKey after the call; empty means key absent
+		name           string
+		initialTag     string // catalog version in Helm values; empty means key absent
+		releaseVersion string // RELEASE_VERSION env var value
+		expectedTag    string // expected catalog version after renderHelmTemplate logic
 	}{
 		{
-			name:        "clusterTag empty - no override regardless of Helm value",
-			initialTag:  catalogVersionSentinel,
-			clusterTag:  "",
-			expectedTag: catalogVersionSentinel,
+			name:           "4.23 release with v5.0 catalog - override to v4.23",
+			initialTag:     "v5.0",
+			releaseVersion: "4.23.0",
+			expectedTag:    "v4.23",
 		},
 		{
-			name:        "sentinel present, cluster is 4.23 - override to v4.23",
-			initialTag:  catalogVersionSentinel,
-			clusterTag:  "v4.23",
-			expectedTag: "v4.23",
+			name:           "5.0 release with v5.0 catalog - no override",
+			initialTag:     "v5.0",
+			releaseVersion: "5.0.0",
+			expectedTag:    "v5.0",
 		},
 		{
-			name:        "Helm pins v4.23 - not the sentinel, no override",
-			initialTag:  "v4.23",
-			clusterTag:  "v4.23",
-			expectedTag: "v4.23",
+			name:           "5.1 release with v5.0 catalog - no override",
+			initialTag:     "v5.0",
+			releaseVersion: "5.1.0",
+			expectedTag:    "v5.0",
 		},
 		{
-			name:        "version key absent in Helm values - no override",
-			initialTag:  "",
-			clusterTag:  "v4.23",
-			expectedTag: "",
+			name:           "5.1 release with v5.1 catalog - no override",
+			initialTag:     "v5.1",
+			releaseVersion: "5.1.0",
+			expectedTag:    "v5.1",
+		},
+		{
+			name:           "4.22 release with v4.22 catalog - no override (not v5.0)",
+			initialTag:     "v4.22",
+			releaseVersion: "4.22.0",
+			expectedTag:    "v4.22",
 		},
 	}
 
@@ -118,7 +124,7 @@ func TestApplyCatalogImageTagOverride(t *testing.T) {
 				require.NoError(t, hv.SetStringValue(versionKey, tt.initialTag))
 			}
 
-			require.NoError(t, applyCatalogImageTagOverride(hv, tt.clusterTag))
+			require.NoError(t, applyCatalogImageTagOverride(hv, tt.releaseVersion))
 
 			got, _ := hv.GetStringValue(versionKey)
 			require.Equal(t, tt.expectedTag, got)

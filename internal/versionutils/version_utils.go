@@ -61,12 +61,6 @@ func ToAllowedSemver(data []byte) (*semver.Version, error) {
 	return &version, nil
 }
 
-// GetCatalogImageTag converts an OCP version to the catalog image tag format used by default catalogs.
-// For example, version 4.22.0 returns "v4.22", and version 5.0.0 returns "v5.0".
-func GetCatalogImageTag(version *semver.Version) string {
-	return fmt.Sprintf("v%d.%d", version.Major, version.Minor)
-}
-
 // ocpVersion500 is the semver representation of OCP 5.0, which is co-released with 4.23 as an
 // equivalent release. Neither upgrades to the other; both upgrade exclusively to 5.1.
 var ocpVersion500 = semver.Version{Major: 5, Minor: 0, Patch: 0}
