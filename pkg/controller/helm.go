@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/cluster-olm-operator/internal/versionutils"
 	"github.com/openshift/cluster-olm-operator/pkg/helmvalues"
 
 	yaml3 "gopkg.in/yaml.v3"
@@ -19,11 +20,6 @@ import (
 
 	"k8s.io/klog/v2"
 )
-
-// catalogVersionSentinel is a placeholder value that openshift.yaml sets for
-// options.openshift.catalogs.version to indicate the catalog tag should be
-// resolved dynamically from the running cluster's OCP major.minor version.
-const catalogVersionSentinel = "ocp-release"
 
 // Expected path structure:
 // ${assets}/helm/${subDir}/olmv1/ = chart
@@ -85,9 +81,10 @@ func (b *Builder) renderHelmTemplate(helmPath, manifestDir string) error {
 	if err := values.SetStringValue("options.operatorController.deployment.image", os.Getenv("OPERATOR_CONTROLLER_IMAGE")); err != nil {
 		return fmt.Errorf("error setting OPERATOR_CONTROLLER_IMAGE: %w", err)
 	}
-	// When openshift.yaml sets options.openshift.catalogs.version to catalogVersionSentinel,
-	// replace it with the tag derived from the running cluster's OCP major.minor version.
-	if err := applyCatalogImageTagOverride(values, b.ClusterCatalogImageTag); err != nil {
+	// OCP 4.23 and 5.0 are co-released. If catalogd.yaml pins "v5.0" but RELEASE_VERSION is
+	// a 4.x stream, substitute the 4.x catalog tag so images match the release stream.
+	// For 5.x releases (including 5.1) the value in catalogd.yaml is left untouched.
+	if err := applyCatalogImageTagOverride(values, os.Getenv("RELEASE_VERSION")); err != nil {
 		return fmt.Errorf("error setting catalog image tag: %w", err)
 	}
 
@@ -232,19 +229,22 @@ type DocumentInfo struct {
 	Order    int
 }
 
-// applyCatalogImageTagOverride replaces options.openshift.catalogs.version in the
-// Helm values when it equals catalogVersionSentinel, substituting the tag derived
-// from the running cluster's OCP major.minor version. It is a no-op when clusterTag
-// is empty or when the current value is not catalogVersionSentinel.
-func applyCatalogImageTagOverride(values *helmvalues.HelmValues, clusterTag string) error {
-	if clusterTag == "" {
+// applyCatalogImageTagOverride substitutes options.openshift.catalogs.version when
+// catalogd.yaml pins it to "v5.0" and RELEASE_VERSION is a 4.x stream (the 4.23/5.0
+// co-release). For 5.x releases the value in catalogd.yaml is left untouched.
+func applyCatalogImageTagOverride(values *helmvalues.HelmValues, releaseVersion string) error {
+	if !strings.HasPrefix(releaseVersion, "4.") {
 		return nil
 	}
-	currentTag, found := values.GetStringValue("options.openshift.catalogs.version")
-	if !found || currentTag != catalogVersionSentinel {
+	currentCatalogVersion, found := values.GetStringValue("options.openshift.catalogs.version")
+	if !found || currentCatalogVersion != "v5.0" {
 		return nil
 	}
-	return values.SetStringValue("options.openshift.catalogs.version", clusterTag)
+	v, err := versionutils.GetCurrentOCPMinorVersion(releaseVersion)
+	if err != nil {
+		return fmt.Errorf("error parsing release version for catalog tag: %w", err)
+	}
+	return values.SetStringValue("options.openshift.catalogs.version", fmt.Sprintf("v%d.%d", v.Major, v.Minor))
 }
 
 func splitYAMLDocuments(content string) []string {

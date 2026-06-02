@@ -95,37 +95,6 @@ func TestToAllowedSemver(t *testing.T) {
 	}
 }
 
-func TestGetCatalogImageTag(t *testing.T) {
-	tests := []struct {
-		name    string
-		version semver.Version
-		want    string
-	}{
-		{
-			name:    "4.22",
-			version: semver.Version{Major: 4, Minor: 22, Patch: 0},
-			want:    "v4.22",
-		},
-		{
-			name:    "5.0",
-			version: semver.Version{Major: 5, Minor: 0, Patch: 0},
-			want:    "v5.0",
-		},
-		{
-			name:    "patch ignored",
-			version: semver.Version{Major: 4, Minor: 22, Patch: 5},
-			want:    "v4.22",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := GetCatalogImageTag(&tt.version)
-			assert.Equal(t, tt.want, got, "unexpected catalog image tag")
-		})
-	}
-}
-
 func TestIsOperatorMaxOCPVersionCompatibleWithCluster(t *testing.T) {
 	tests := []struct {
 		name                   string

@@ -230,13 +230,6 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 
 	log := klog.FromContext(ctx)
 
-	operatorImageVersion := status.VersionForOperatorFromEnv()
-	currentOCPMinorVersion, err := versionutils.GetCurrentOCPMinorVersion(operatorImageVersion)
-	if err != nil {
-		return err
-	}
-	catalogImageTag := versionutils.GetCatalogImageTag(currentOCPMinorVersion)
-
 	fg, err := cl.ConfigClient.ConfigV1().FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("unable to retrieve featureSet: %w", err)
@@ -259,9 +252,8 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 				Scope:            meta.RESTScopeRoot,
 			},
 		},
-		FeatureGate:            *fg,
-		Infrastructure:         infra,
-		ClusterCatalogImageTag: catalogImageTag,
+		FeatureGate:    *fg,
+		Infrastructure: infra,
 	}
 
 	staticResourceControllers, deploymentControllers, clusterCatalogControllers, relatedObjects, err := cb.BuildControllers("catalogd", "operator-controller")
@@ -294,6 +286,12 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	for name, controller := range clusterCatalogControllers {
 		controllerNames = append(controllerNames, name)
 		clusterCatalogControllerList = append(clusterCatalogControllerList, controller)
+	}
+
+	operatorImageVersion := status.VersionForOperatorFromEnv()
+	currentOCPMinorVersion, err := versionutils.GetCurrentOCPMinorVersion(operatorImageVersion)
+	if err != nil {
+		return err
 	}
 
 	upgradeableConditionController := controller.NewStaticUpgradeableConditionController(
@@ -340,7 +338,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	)
 
 	versionGetter := status.NewVersionGetter()
-	versionGetter.SetVersion("operator", operatorImageVersion)
+	versionGetter.SetVersion("operator", status.VersionForOperatorFromEnv())
 
 	// Add all resources to relatedObjects to ensure that must-gather picks them up.
 	// Note: These resources are also hard-coded in the ClusterOperator manifest. This way,
