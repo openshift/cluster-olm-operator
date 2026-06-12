@@ -292,8 +292,8 @@ github.com/openshift/build-machinery-go v0.0.0-20250530140348-dc5b2804eeee h1:+S
 github.com/openshift/build-machinery-go v0.0.0-20250530140348-dc5b2804eeee/go.mod h1:8jcm8UPtg2mCAsxfqKil1xrmRMI3a+XU2TZ9fF8A7TE=
 github.com/openshift/client-go v0.0.0-20260603140539-6892dc3e1ffc h1:yCLc/pmoZ4YZbMWlAnvYZ2YWkLZoPCilO4Fk/oAu2/E=
 github.com/openshift/client-go v0.0.0-20260603140539-6892dc3e1ffc/go.mod h1:eqfaEX/V7xHMZ8Mpf72J03RnnY/kEqoZVLpkpjy5p6s=
-github.com/openshift/library-go v0.0.0-20260611163309-76d59b26c21f h1:jx8D6sDnBZ5Cf2BDJI8KxSvjrrPvi2rhlKSngOfcoxU=
-github.com/openshift/library-go v0.0.0-20260611163309-76d59b26c21f/go.mod h1:/HBhy6jm/igWI3Y1vYFwFG3ZCcXmnNsKUT6VBpPyM9A=
+github.com/openshift/library-go v0.0.0-20260612043516-51ccb5851899 h1:GEGxqvMmu/Kug8I02kA6ct6/J2t1OJd4OnAPLNz/tGI=
+github.com/openshift/library-go v0.0.0-20260612043516-51ccb5851899/go.mod h1:/HBhy6jm/igWI3Y1vYFwFG3ZCcXmnNsKUT6VBpPyM9A=
 github.com/operator-framework/api v0.36.0 h1:6+duRhamCvB540JbvNp/1+Pot7luff7HqdAOm9bAntg=
 github.com/operator-framework/api v0.36.0/go.mod h1:QSmHMx8XpGsNWvjU5CUelVZC916VLp/TZhfYvGKpghM=
 github.com/operator-framework/helm-operator-plugins v0.8.0 h1:0f6HOQC5likkf0b/OvGvw7nhDb6h8Cj5twdCNjwNzMc=
