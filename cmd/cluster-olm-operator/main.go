@@ -6,12 +6,15 @@ import (
 	goflag "flag"
 	"fmt"
 	"os"
+	"reflect"
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/cluster-olm-operator/internal/versionutils"
 
 	_ "github.com/openshift/api/operator/v1/zz_generated.crd-manifests"
+	configclient "github.com/openshift/client-go/config/clientset/versioned"
+	libgoclient "github.com/openshift/library-go/pkg/config/client"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/loglevel"
@@ -85,14 +88,52 @@ func newRootCommand() *cobra.Command {
 }
 
 func newStartCommand() *cobra.Command {
+	// metricsConfigFile is the temp file written by PersistentPreRunE and watched by
+	// controllercmd's WithRestartOnChange. It is shared with runOperator via the closure
+	// so that the TLS change handler can update it and trigger a graceful restart.
+	var metricsConfigFile string
+
 	cmd := controllercmd.NewControllerCommandConfig(
 		"cluster-olm-operator",
 		version.Get(),
-		runOperator,
+		func(ctx context.Context, cc *controllercmd.ControllerContext) error {
+			return runOperator(ctx, cc, metricsConfigFile)
+		},
 		clock.RealClock{},
 	).NewCommandWithContext(context.Background())
 	cmd.Use = "start"
 	cmd.Short = "Start the Cluster OLM Operator"
+
+	// Pre-configure the metrics server TLS from the cluster APIServer TLS profile before
+	// controllercmd starts the server. This runs only when --config is not already provided.
+	cmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		if cmd.Flags().Changed("config") {
+			return nil
+		}
+		kubeConfig, err := libgoclient.GetKubeConfigOrInClusterConfig("", nil)
+		if err != nil {
+			klog.Warningf("Skipping metrics server TLS pre-configuration (no in-cluster config): %v", err)
+			return nil
+		}
+		cfgClient, err := configclient.NewForConfig(kubeConfig)
+		if err != nil {
+			klog.Warningf("Skipping metrics server TLS pre-configuration (config client error): %v", err)
+			return nil
+		}
+		servingInfo, err := controller.GetMetricsServerTLSServingInfo(context.Background(), cfgClient)
+		if err != nil || servingInfo.MinTLSVersion == "" {
+			klog.Warningf("Skipping metrics server TLS pre-configuration: %v", err)
+			return nil
+		}
+		configFile, err := controller.WriteMetricsServerConfigFile(servingInfo)
+		if err != nil {
+			klog.Warningf("Skipping metrics server TLS pre-configuration (write error): %v", err)
+			return nil
+		}
+		metricsConfigFile = configFile
+		return cmd.Flags().Set("config", configFile)
+	}
+
 	return cmd
 }
 
@@ -222,7 +263,7 @@ func waitForOperatorControllerRBAC(ctx context.Context, cl *clients.Clients, log
 	return nil
 }
 
-func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error {
+func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metricsConfigFile string) error {
 	cl, err := clients.New(cc)
 	if err != nil {
 		return err
@@ -394,6 +435,53 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		UpdateFunc: func(_, newObj interface{}) { checkTopologyChange(newObj) },
 	}); err != nil {
 		return fmt.Errorf("failed to add infrastructure event handler: %w", err)
+	}
+
+	// When the TLS security profile changes the TLSObserverController stores the new
+	// settings in observedConfig, which the deployment hook then propagates to the operand
+	// Deployments. For the operator's own metrics server — which is configured at startup —
+	// we must restart the pod so PersistentPreRunE can re-read the new profile.
+	//
+	// We watch the operator client informer (not the APIServer informer) so that we fire
+	// only after the new config is already stored, avoiding a double-watch on the APIServer.
+	// The initial TLS profile is read directly from the APIServer so it matches what
+	// PersistentPreRunE used; this prevents a spurious restart on the first observer sync.
+	//
+	// Rather than calling os.Exit directly we update the config file that controllercmd's
+	// WithRestartOnChange is already watching — it detects the content change and performs
+	// a graceful restart for us.
+	initialTLSServingInfo, err := controller.GetMetricsServerTLSServingInfo(ctx, cl.ConfigClient)
+	if err != nil {
+		return fmt.Errorf("unable to retrieve initial TLS profile for metrics server: %w", err)
+	}
+	if _, err := cl.OperatorClient.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: func(_, _ interface{}) {
+			operatorSpec, _, _, err := cl.OperatorClient.GetOperatorState()
+			if err != nil {
+				log.V(4).Info("Failed to get operator state in TLS change handler", "error", err)
+				return
+			}
+			newMinTLS, newCiphers := controller.TLSProfileFromObservedConfig(operatorSpec)
+			if newMinTLS == "" {
+				return // observer hasn't stored a TLS profile yet
+			}
+			if newMinTLS == initialTLSServingInfo.MinTLSVersion && reflect.DeepEqual(newCiphers, initialTLSServingInfo.CipherSuites) {
+				return // unchanged
+			}
+			log.Info("TLS security profile changed, updating metrics server config to trigger restart",
+				"old", initialTLSServingInfo.MinTLSVersion, "new", newMinTLS)
+			newServingInfo := configv1.HTTPServingInfo{
+				ServingInfo: configv1.ServingInfo{
+					MinTLSVersion: newMinTLS,
+					CipherSuites:  newCiphers,
+				},
+			}
+			if err := controller.UpdateMetricsServerConfigFile(metricsConfigFile, newServingInfo); err != nil {
+				klog.Warningf("Failed to update metrics server TLS config file: %v", err)
+			}
+		},
+	}); err != nil {
+		return fmt.Errorf("failed to add operator TLS change event handler: %w", err)
 	}
 
 	cl.StartInformers(ctx)
