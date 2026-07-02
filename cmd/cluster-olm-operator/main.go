@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+	cache "k8s.io/client-go/tools/cache"
 	"k8s.io/component-base/cli"
 	utilflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
@@ -234,6 +235,11 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 		return fmt.Errorf("unable to retrieve featureSet: %w", err)
 	}
 
+	infra, err := cl.ConfigClient.ConfigV1().Infrastructures().Get(ctx, "cluster", metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("unable to retrieve infrastructure: %w", err)
+	}
+
 	clusterCatalogGvk := ocv1.GroupVersion.WithKind("ClusterCatalog")
 	cb := controller.Builder{
 		Assets:            assetPath,
@@ -246,7 +252,8 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 				Scope:            meta.RESTScopeRoot,
 			},
 		},
-		FeatureGate: *fg,
+		FeatureGate:    *fg,
+		Infrastructure: infra,
 	}
 
 	staticResourceControllers, deploymentControllers, clusterCatalogControllers, relatedObjects, err := cb.BuildControllers("catalogd", "operator-controller")
@@ -365,6 +372,29 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext) error
 	)
 
 	operatorLoggingController := loglevel.NewClusterOperatorLoggingController(cl.OperatorClient, cc.EventRecorder.ForComponent("ClusterOLMOperatorLoggingController"))
+
+	// Watch for infrastructure topology changes. Topology changes are exceedingly rare
+	// (e.g., SNO to HA conversion) but require re-rendering the Helm manifests with the
+	// correct replica count and PDB settings. Exiting causes the deployment controller to
+	// restart cluster-olm-operator, which re-renders the manifests on startup.
+	initialTopology := infra.Status.ControlPlaneTopology
+	checkTopologyChange := func(obj interface{}) {
+		newInfra, ok := obj.(*configv1.Infrastructure)
+		if !ok {
+			return
+		}
+		if newInfra.Status.ControlPlaneTopology != initialTopology {
+			log.Info("Infrastructure topology changed, restarting to re-render manifests",
+				"old", initialTopology, "new", newInfra.Status.ControlPlaneTopology)
+			os.Exit(0)
+		}
+	}
+	if _, err := cl.InfrastructureClient.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    checkTopologyChange,
+		UpdateFunc: func(_, newObj interface{}) { checkTopologyChange(newObj) },
+	}); err != nil {
+		return fmt.Errorf("failed to add infrastructure event handler: %w", err)
+	}
 
 	cl.StartInformers(ctx)
 

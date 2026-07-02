@@ -45,6 +45,7 @@ type Builder struct {
 	ControllerContext *controllercmd.ControllerContext
 	KnownRESTMappings map[schema.GroupVersionKind]*meta.RESTMapping
 	FeatureGate       configv1.FeatureGate
+	Infrastructure    *configv1.Infrastructure
 }
 
 func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory.Controller, map[string]factory.Controller, map[string]factory.Controller, []configv1.ObjectReference, error) {

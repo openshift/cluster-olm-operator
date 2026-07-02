@@ -64,6 +64,7 @@ type Clients struct {
 	ClusterObjectSetClient     *ClusterObjectSetClient
 	ClusterCatalogClient       *ClusterCatalogClient
 	ProxyClient                *ProxyClient
+	InfrastructureClient       *InfrastructureClient
 	ConfigClient               configclient.Interface
 	KubeInformerFactory        informers.SharedInformerFactory
 	ConfigInformerFactory      configinformer.SharedInformerFactory
@@ -128,6 +129,7 @@ func New(cc *controllercmd.ControllerContext) (*Clients, error) {
 		ClusterCatalogClient:   NewClusterCatalogClient(dynClient),
 		ClusterObjectSetClient: NewClusterObjectSetClient(dynClient),
 		ProxyClient:            NewProxyClient(configInformerFactory),
+		InfrastructureClient:   NewInfrastructureClient(configInformerFactory),
 		ConfigClient:           configClient,
 		KubeInformerFactory:    informers.NewSharedInformerFactory(kubeClient, defaultResyncPeriod),
 		ConfigInformerFactory:  configInformerFactory,
@@ -287,6 +289,28 @@ func NewProxyClient(infFact configinformer.SharedInformerFactory) *ProxyClient {
 	return &ProxyClient{
 		factory:  infFact,
 		informer: inf,
+	}
+}
+
+type InfrastructureClientInterface interface {
+	Get(key string) (*configv1.Infrastructure, error)
+}
+
+type InfrastructureClient struct {
+	informer configinformerv1.InfrastructureInformer
+}
+
+func (ic *InfrastructureClient) Informer() cache.SharedIndexInformer {
+	return ic.informer.Informer()
+}
+
+func (ic *InfrastructureClient) Get(key string) (*configv1.Infrastructure, error) {
+	return ic.informer.Lister().Get(key)
+}
+
+func NewInfrastructureClient(infFact configinformer.SharedInformerFactory) *InfrastructureClient {
+	return &InfrastructureClient{
+		informer: infFact.Config().V1().Infrastructures(),
 	}
 }
 
