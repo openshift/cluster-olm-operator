@@ -92,8 +92,7 @@ func (c *incompatibleOperatorController) sync(ctx context.Context, _ factory.Syn
 		// deterministic ordering
 		sort.Strings(incompatibleOperators)
 
-		// TODO(4.23): Update this message when main becomes 4.23 development
-		message := fmt.Sprintf("Found ClusterExtensions that require upgrades prior to upgrading cluster to version 4.23 or 5.0: %s.", strings.Join(incompatibleOperators, ","))
+		message := fmt.Sprintf("Found ClusterExtensions that require upgrades prior to upgrading cluster to version %s: %s.", versionutils.NextOCPMinorVersion(*c.currentOCPMinorVersion), strings.Join(incompatibleOperators, ","))
 		if err != nil {
 			message += fmt.Sprintf("\n Additionally the following errors were encountered while getting extension metadata: %s", err.Error())
 		}

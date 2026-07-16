@@ -65,6 +65,17 @@ func ToAllowedSemver(data []byte) (*semver.Version, error) {
 // equivalent release. Neither upgrades to the other; both upgrade exclusively to 5.1.
 var ocpVersion500 = semver.Version{Major: 5, Minor: 0, Patch: 0}
 
+// NextOCPMinorVersion returns the next OCP minor version string after current.
+// The general rule is MAJOR.(MINOR+1), with one special case:
+// OCP 4.23 and 5.0 are co-released equivalents whose only upgrade target is 5.1,
+// so a cluster at 4.23 returns "5.1" rather than the naive "4.24".
+func NextOCPMinorVersion(current semver.Version) string {
+	if current.Major == 4 && current.Minor == 23 {
+		return "5.1"
+	}
+	return fmt.Sprintf("%d.%d", current.Major, current.Minor+1)
+}
+
 // IsOperatorMaxOCPVersionCompatibleWithCluster compares the operator's maximum openshift version with the current cluster version
 // and returns whether the operator is upgradable to the next cluster version. For example,
 //
