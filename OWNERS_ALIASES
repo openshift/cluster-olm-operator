@@ -1,24 +1,21 @@
-
 aliases:
    # contributors who can approve any PRs in the repo
    operator-runtime-approvers:
    - grokspawn
    - joelanford
-   - oceanc80
    - pedjak
    - perdasilva
    - tmshort
-   - jianzhangbjz
 
    # contributors who can review/lgtm any PRs in the repo
    operator-runtime-reviewers:
-   - anik120
    - ankitathomas
    - dtfranz
    - fgiudici
    - grokspawn
    - joelanford
-   - oceanc80
    - pedjak
    - perdasilva
+   - rashmigottipati
    - tmshort
+   - trgeiger
