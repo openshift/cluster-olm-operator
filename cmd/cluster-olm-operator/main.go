@@ -52,6 +52,7 @@ const (
 	// operator-controller resource identifiers
 	operatorControllerNamespace      = "openshift-operator-controller"
 	operatorControllerServiceAccount = "operator-controller-controller-manager"
+	operatorControllerCRBName        = "operator-controller-cluster-admin-rolebinding"
 )
 
 func main() {
@@ -188,14 +189,13 @@ func waitForOperatorControllerResources(ctx context.Context, cl *clients.Clients
 // propagated through the kube-apiserver's RBAC authorization cache.
 // This function assumes the namespace and ServiceAccount already exist.
 func waitForOperatorControllerRBAC(ctx context.Context, cl *clients.Clients, log klog.Logger) error {
-	// The ClusterRoleBinding name varies based on feature flags enabled in the Helm chart:
-	// - TechPreview/DevPreview: operator-controller-manager-admin-rolebinding
-	// - CustomNoUpgrade: operator-controller-manager-rolebinding
-	// We check for both possible names to handle all experimental feature set variants.
-	crbNames := []string{
-		"operator-controller-manager-admin-rolebinding", // TechPreview, DevPreview
-		"operator-controller-manager-rolebinding",       // CustomNoUpgrade
+	// We check for both the current name and legacy names to handle upgrades
+	// where the old ClusterRoleBinding may still exist.
+	legacyCRBNames := []string{
+		"operator-controller-manager-admin-rolebinding", // legacy: TechPreview, DevPreview
+		"operator-controller-manager-rolebinding",       // legacy: CustomNoUpgrade
 	}
+	crbNames := append([]string{operatorControllerCRBName}, legacyCRBNames...)
 
 	log.Info("Waiting for operator-controller RBAC to be created and propagated")
 
@@ -258,6 +258,16 @@ func waitForOperatorControllerRBAC(ctx context.Context, cl *clients.Clients, log
 	})
 	if err != nil {
 		return fmt.Errorf("timeout waiting for RBAC authorization to propagate: %w", err)
+	}
+
+	// Clean up legacy ClusterRoleBindings that may be left over from a previous release.
+	for _, name := range legacyCRBNames {
+		err := cl.KubeClient.RbacV1().ClusterRoleBindings().Delete(ctx, name, metav1.DeleteOptions{})
+		if err != nil && !apierrors.IsNotFound(err) {
+			log.Error(err, "failed to delete legacy ClusterRoleBinding", "name", name)
+		} else if err == nil {
+			log.Info("deleted legacy ClusterRoleBinding", "name", name)
+		}
 	}
 
 	return nil
