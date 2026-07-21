@@ -30,7 +30,6 @@ func TestMapper_DownstreamFeatureGates(t *testing.T) {
 	gates := mapper.DownstreamFeatureGates()
 
 	expectedGates := []configv1.FeatureGateName{
-		features.FeatureGateNewOLMPreflightPermissionChecks,
 		features.FeatureGateNewOLMOwnSingleNamespace,
 		features.FeatureGateNewOLMWebhookProviderOpenshiftServiceCA,
 		features.FeatureGateNewOLMCatalogdAPIV1Metas,
@@ -58,12 +57,6 @@ func TestMapper_UpstreamForDownstream(t *testing.T) {
 		enabled        bool
 		expectFunc     bool
 	}{
-		{
-			name:           "valid downstream gate - preflight permissions",
-			downstreamGate: features.FeatureGateNewOLMPreflightPermissionChecks,
-			enabled:        true,
-			expectFunc:     true,
-		},
 		{
 			name:           "valid downstream gate - own single namespace",
 			downstreamGate: features.FeatureGateNewOLMOwnSingleNamespace,
@@ -123,28 +116,28 @@ func TestMapper_FeatureGateMappings(t *testing.T) {
 		expectedValues map[string]interface{}
 	}{
 		{
-			name:           "PreflightPermissionChecks enabled",
-			downstreamGate: features.FeatureGateNewOLMPreflightPermissionChecks,
+			name:           "BoxCutterRuntime enabled",
+			downstreamGate: features.FeatureGateNewOLMBoxCutterRuntime,
 			enabled:        true,
 			expectedValues: map[string]interface{}{
 				"options": map[string]interface{}{
 					"operatorController": map[string]interface{}{
 						"features": map[string]interface{}{
-							"enabled": []interface{}{PreflightPermissions},
+							"enabled": []interface{}{BoxCutterRuntime},
 						},
 					},
 				},
 			},
 		},
 		{
-			name:           "PreflightPermissionChecks disabled",
-			downstreamGate: features.FeatureGateNewOLMPreflightPermissionChecks,
+			name:           "BoxCutterRuntime disabled",
+			downstreamGate: features.FeatureGateNewOLMBoxCutterRuntime,
 			enabled:        false,
 			expectedValues: map[string]interface{}{
 				"options": map[string]interface{}{
 					"operatorController": map[string]interface{}{
 						"features": map[string]interface{}{
-							"disabled": []interface{}{PreflightPermissions},
+							"disabled": []interface{}{BoxCutterRuntime},
 						},
 					},
 				},
@@ -307,7 +300,7 @@ func TestMapper_FeatureGateValidation(t *testing.T) {
 	t.Run("validates constants are not empty", func(t *testing.T) {
 		constants := []string{
 			APIV1MetasHandler,
-			PreflightPermissions,
+			BoxCutterRuntime,
 			SingleOwnNamespaceInstallSupport,
 			WebhookProviderOpenshiftServiceCA,
 			WebhookProviderCertManager,
@@ -325,7 +318,7 @@ func TestMapper_FeatureGateValidation(t *testing.T) {
 func TestMapper_Constants(t *testing.T) {
 	expectedConstants := map[string]string{
 		"APIV1MetasHandler":                 APIV1MetasHandler,
-		"PreflightPermissions":              PreflightPermissions,
+		"BoxCutterRuntime":                  BoxCutterRuntime,
 		"SingleOwnNamespaceInstallSupport":  SingleOwnNamespaceInstallSupport,
 		"WebhookProviderOpenshiftServiceCA": WebhookProviderOpenshiftServiceCA,
 		"WebhookProviderCertManager":        WebhookProviderCertManager,
@@ -337,7 +330,7 @@ func TestMapper_Constants(t *testing.T) {
 		}
 	}
 
-	if APIV1MetasHandler == PreflightPermissions {
+	if APIV1MetasHandler == BoxCutterRuntime {
 		t.Error("APIV1MetasHandler and PreflightPermissions should be different")
 	}
 }
@@ -355,13 +348,13 @@ func TestEnableFeature(t *testing.T) {
 			name:        "enable feature in empty values",
 			addList:     helmvalues.EnableOperatorController,
 			removeList:  helmvalues.DisableOperatorController,
-			feature:     PreflightPermissions,
+			feature:     BoxCutterRuntime,
 			initialVals: make(map[string]interface{}),
 			expectedVals: map[string]interface{}{
 				"options": map[string]interface{}{
 					"operatorController": map[string]interface{}{
 						"features": map[string]interface{}{
-							"enabled": []interface{}{PreflightPermissions},
+							"enabled": []interface{}{BoxCutterRuntime},
 						},
 					},
 				},
@@ -371,12 +364,12 @@ func TestEnableFeature(t *testing.T) {
 			name:       "enable feature and remove from disabled list",
 			addList:    helmvalues.EnableOperatorController,
 			removeList: helmvalues.DisableOperatorController,
-			feature:    PreflightPermissions,
+			feature:    BoxCutterRuntime,
 			initialVals: map[string]interface{}{
 				"options": map[string]interface{}{
 					"operatorController": map[string]interface{}{
 						"features": map[string]interface{}{
-							"disabled": []interface{}{PreflightPermissions},
+							"disabled": []interface{}{BoxCutterRuntime},
 						},
 					},
 				},
@@ -386,7 +379,7 @@ func TestEnableFeature(t *testing.T) {
 					"operatorController": map[string]interface{}{
 						"features": map[string]interface{}{
 							"disabled": []interface{}{},
-							"enabled":  []interface{}{PreflightPermissions},
+							"enabled":  []interface{}{BoxCutterRuntime},
 						},
 					},
 				},
@@ -451,13 +444,13 @@ func TestEnableOperatorControllerFeature(t *testing.T) {
 		{
 			name:        "enable feature",
 			enabled:     true,
-			feature:     PreflightPermissions,
+			feature:     BoxCutterRuntime,
 			initialVals: make(map[string]interface{}),
 			expectedVals: map[string]interface{}{
 				"options": map[string]interface{}{
 					"operatorController": map[string]interface{}{
 						"features": map[string]interface{}{
-							"enabled": []interface{}{PreflightPermissions},
+							"enabled": []interface{}{BoxCutterRuntime},
 						},
 					},
 				},
@@ -466,13 +459,13 @@ func TestEnableOperatorControllerFeature(t *testing.T) {
 		{
 			name:        "disable feature",
 			enabled:     false,
-			feature:     PreflightPermissions,
+			feature:     BoxCutterRuntime,
 			initialVals: make(map[string]interface{}),
 			expectedVals: map[string]interface{}{
 				"options": map[string]interface{}{
 					"operatorController": map[string]interface{}{
 						"features": map[string]interface{}{
-							"disabled": []interface{}{PreflightPermissions},
+							"disabled": []interface{}{BoxCutterRuntime},
 						},
 					},
 				},
