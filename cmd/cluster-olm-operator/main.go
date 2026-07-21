@@ -188,13 +188,13 @@ func waitForOperatorControllerResources(ctx context.Context, cl *clients.Clients
 // propagated through the kube-apiserver's RBAC authorization cache.
 // This function assumes the namespace and ServiceAccount already exist.
 func waitForOperatorControllerRBAC(ctx context.Context, cl *clients.Clients, log klog.Logger) error {
-	// The ClusterRoleBinding name varies based on feature flags enabled in the Helm chart:
-	// - TechPreview/DevPreview: operator-controller-manager-admin-rolebinding
-	// - CustomNoUpgrade: operator-controller-manager-rolebinding
-	// We check for both possible names to handle all experimental feature set variants.
+	// The ClusterRoleBinding grants the operator-controller ServiceAccount cluster-admin
+	// privileges. We check for both the current name and legacy names to handle upgrades
+	// where the old ClusterRoleBinding may still exist.
 	crbNames := []string{
-		"operator-controller-manager-admin-rolebinding", // TechPreview, DevPreview
-		"operator-controller-manager-rolebinding",       // CustomNoUpgrade
+		"operator-controller-cluster-admin-rolebinding", // current (all feature sets)
+		"operator-controller-manager-admin-rolebinding", // legacy: TechPreview, DevPreview
+		"operator-controller-manager-rolebinding",       // legacy: CustomNoUpgrade
 	}
 
 	log.Info("Waiting for operator-controller RBAC to be created and propagated")
