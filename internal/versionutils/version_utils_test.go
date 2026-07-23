@@ -95,6 +95,40 @@ func TestToAllowedSemver(t *testing.T) {
 	}
 }
 
+func TestNextOCPMinorVersion(t *testing.T) {
+	tests := []struct {
+		name    string
+		current semver.Version
+		want    string
+	}{
+		{
+			name:    "4.22 => 4.23",
+			current: semver.Version{Major: 4, Minor: 22},
+			want:    "4.23",
+		},
+		{
+			name:    "4.23 => 5.1 (co-release special case, not 4.24)",
+			current: semver.Version{Major: 4, Minor: 23},
+			want:    "5.1",
+		},
+		{
+			name:    "5.0 => 5.1",
+			current: semver.Version{Major: 5, Minor: 0},
+			want:    "5.1",
+		},
+		{
+			name:    "5.1 => 5.2",
+			current: semver.Version{Major: 5, Minor: 1},
+			want:    "5.2",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, NextOCPMinorVersion(tt.current))
+		})
+	}
+}
+
 func TestIsOperatorMaxOCPVersionCompatibleWithCluster(t *testing.T) {
 	tests := []struct {
 		name                   string
