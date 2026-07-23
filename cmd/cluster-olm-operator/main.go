@@ -50,9 +50,16 @@ const (
 	manifestsPath      = "/manifests"
 
 	// operator-controller resource identifiers
-	operatorControllerNamespace      = "openshift-operator-controller"
-	operatorControllerServiceAccount = "operator-controller-controller-manager"
+	operatorControllerNamespace                   = "openshift-operator-controller"
+	operatorControllerServiceAccount              = "operator-controller-controller-manager"
+	operatorControllerClusterAdminRoleBindingName = "operator-controller-cluster-admin-rolebinding" // 5.0+ (cluster-admin)
+	operatorControllerManagerRoleName             = "operator-controller-manager-role"
 )
+
+var legacyOperatorControllerRoleBindingNames = []string{
+	"operator-controller-manager-admin-rolebinding", // pre-5.0 TechPreview, DevPreview
+	"operator-controller-manager-rolebinding",       // pre-5.0 CustomNoUpgrade
+}
 
 func main() {
 	pflag.CommandLine.SetNormalizeFunc(utilflag.WordSepNormalizeFunc)
@@ -187,40 +194,31 @@ func waitForOperatorControllerResources(ctx context.Context, cl *clients.Clients
 // operator-controller ServiceAccount access to the privileged SCC to be created and
 // propagated through the kube-apiserver's RBAC authorization cache.
 // This function assumes the namespace and ServiceAccount already exist.
-func waitForOperatorControllerRBAC(ctx context.Context, cl *clients.Clients, log klog.Logger) error {
-	// The ClusterRoleBinding name varies based on feature flags enabled in the Helm chart:
-	// - TechPreview/DevPreview: operator-controller-manager-admin-rolebinding
-	// - CustomNoUpgrade: operator-controller-manager-rolebinding
-	// We check for both possible names to handle all experimental feature set variants.
-	crbNames := []string{
-		"operator-controller-manager-admin-rolebinding", // TechPreview, DevPreview
-		"operator-controller-manager-rolebinding",       // CustomNoUpgrade
-	}
+// Returns the name of the ClusterRoleBinding that was found.
+func waitForOperatorControllerRBAC(ctx context.Context, cl *clients.Clients, log klog.Logger) (string, error) {
+	crbNames := append([]string{operatorControllerClusterAdminRoleBindingName}, legacyOperatorControllerRoleBindingNames...)
 
 	log.Info("Waiting for operator-controller RBAC to be created and propagated")
 
 	var foundCRB string
 	// Wait for ClusterRoleBinding to exist
 	err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
-		for _, crbName := range crbNames {
-			_, err := cl.KubeClient.RbacV1().ClusterRoleBindings().Get(ctx, crbName, metav1.GetOptions{})
+		for _, name := range crbNames {
+			_, err := cl.KubeClient.RbacV1().ClusterRoleBindings().Get(ctx, name, metav1.GetOptions{})
 			if err == nil {
-				foundCRB = crbName
-				log.Info("ClusterRoleBinding created", "name", crbName)
+				foundCRB = name
+				log.Info("ClusterRoleBinding created", "name", name)
 				return true, nil
 			}
-			// If this error is NOT NotFound (e.g., Forbidden, network error), fail fast
 			if !apierrors.IsNotFound(err) {
 				return false, err
 			}
-			// If it's NotFound, continue checking other candidates
 		}
-		// All ClusterRoleBindings returned NotFound, continue polling
 		log.V(2).Info("ClusterRoleBinding does not exist yet, waiting", "names", crbNames)
-		return false, nil // Continue polling
+		return false, nil
 	})
 	if err != nil {
-		return fmt.Errorf("timeout waiting for ClusterRoleBinding %v to be created: %w", crbNames, err)
+		return "", fmt.Errorf("timeout waiting for ClusterRoleBinding %v to be created: %w", crbNames, err)
 	}
 
 	// Poll using SubjectAccessReview to verify RBAC authorization cache propagation.
@@ -257,10 +255,33 @@ func waitForOperatorControllerRBAC(ctx context.Context, cl *clients.Clients, log
 		return false, nil // Continue polling
 	})
 	if err != nil {
-		return fmt.Errorf("timeout waiting for RBAC authorization to propagate: %w", err)
+		return "", fmt.Errorf("timeout waiting for RBAC authorization to propagate: %w", err)
 	}
 
-	return nil
+	return foundCRB, nil
+}
+
+// cleanupOldOperatorControllerRBAC removes pre-5.0 RBAC resources that are no longer
+// rendered by the operator-controller Helm chart after the service account deprecation.
+// The old custom ClusterRole and conditionally-named ClusterRoleBindings are replaced
+// by a single ClusterRoleBinding referencing the built-in cluster-admin ClusterRole.
+// Cleanup is best-effort: NotFound errors are ignored, other errors are logged.
+func cleanupOldOperatorControllerRBAC(ctx context.Context, cl *clients.Clients, log klog.Logger) {
+	for _, name := range legacyOperatorControllerRoleBindingNames {
+		err := cl.KubeClient.RbacV1().ClusterRoleBindings().Delete(ctx, name, metav1.DeleteOptions{})
+		if err != nil && !apierrors.IsNotFound(err) {
+			log.Info("Failed to clean up old ClusterRoleBinding", "name", name, "error", err)
+		} else if err == nil {
+			log.Info("Cleaned up old ClusterRoleBinding", "name", name)
+		}
+	}
+
+	err := cl.KubeClient.RbacV1().ClusterRoles().Delete(ctx, operatorControllerManagerRoleName, metav1.DeleteOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		log.Info("Failed to clean up old ClusterRole", "name", operatorControllerManagerRoleName, "error", err)
+	} else if err == nil {
+		log.Info("Cleaned up old ClusterRole", "name", operatorControllerManagerRoleName)
+	}
 }
 
 func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metricsConfigFile string) error {
@@ -522,8 +543,13 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 		// to be created and propagated through the kube-apiserver's RBAC cache. This ensures
 		// the SCC admission plugin recognizes the permissions before we create the Deployment,
 		// preventing the race condition that caused flaky SCC denial events.
-		if err := waitForOperatorControllerRBAC(ctx, cl, log); err != nil {
+		foundCRB, err := waitForOperatorControllerRBAC(ctx, cl, log)
+		if err != nil {
 			return err
+		}
+
+		if foundCRB == operatorControllerClusterAdminRoleBindingName {
+			cleanupOldOperatorControllerRBAC(ctx, cl, log)
 		}
 	}
 
