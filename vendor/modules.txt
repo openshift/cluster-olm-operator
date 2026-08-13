@@ -224,7 +224,7 @@ github.com/google/go-cmp/cmp/internal/diff
 github.com/google/go-cmp/cmp/internal/flags
 github.com/google/go-cmp/cmp/internal/function
 github.com/google/go-cmp/cmp/internal/value
-# github.com/google/pprof v0.0.0-20260115054156-294ebfa9ad83
+# github.com/google/pprof v0.0.0-20260402051712-545e8a4df936
 ## explicit; go 1.24.0
 github.com/google/pprof/profile
 # github.com/google/uuid v1.6.0
@@ -499,8 +499,8 @@ github.com/openshift/library-go/pkg/serviceability
 github.com/operator-framework/api/pkg/lib/version
 github.com/operator-framework/api/pkg/operators
 github.com/operator-framework/api/pkg/operators/v1alpha1
-# github.com/operator-framework/helm-operator-plugins v0.8.0
-## explicit; go 1.23.0
+# github.com/operator-framework/helm-operator-plugins v0.9.1
+## explicit; go 1.25.0
 github.com/operator-framework/helm-operator-plugins/pkg/storage
 # github.com/operator-framework/operator-controller v1.5.1
 ## explicit; go 1.24.4

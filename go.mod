@@ -10,7 +10,7 @@ require (
 	github.com/openshift/build-machinery-go v0.0.0-20250530140348-dc5b2804eeee
 	github.com/openshift/client-go v0.0.0-20260723174158-ae2315de9d73
 	github.com/openshift/library-go v0.0.0-20260727154952-0aacacf2673e
-	github.com/operator-framework/helm-operator-plugins v0.8.0
+	github.com/operator-framework/helm-operator-plugins v0.9.1
 	github.com/operator-framework/operator-controller v1.5.1
 	github.com/operator-framework/operator-registry v1.60.0
 	github.com/spf13/cobra v1.10.2
@@ -84,7 +84,7 @@ require (
 	github.com/google/cel-go v0.26.1 // indirect
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
-	github.com/google/pprof v0.0.0-20260115054156-294ebfa9ad83 // indirect
+	github.com/google/pprof v0.0.0-20260402051712-545e8a4df936 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gosuri/uitable v0.0.4 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.1.0 // indirect
