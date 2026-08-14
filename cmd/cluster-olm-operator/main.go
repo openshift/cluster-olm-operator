@@ -431,7 +431,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 		versionGetter,
 		cc.EventRecorder.ForComponent("olm"),
 		cc.Clock,
-	)
+	).WithAvailableInertia(status.MustNewInertia(5 * time.Second).Inertia)
 
 	operatorLoggingController := loglevel.NewClusterOperatorLoggingController(cl.OperatorClient, cc.EventRecorder.ForComponent("ClusterOLMOperatorLoggingController"))
 
