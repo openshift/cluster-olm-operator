@@ -21,7 +21,8 @@ func TestUpdateDeploymentObservedConfigHook(t *testing.T) {
 					Raw: []byte(`{
 						"olmTLSSecurityProfile": {
 							"minTLSVersion": "VersionTLS12",
-							"cipherSuites": ["TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384"]
+							"cipherSuites": ["TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384"],
+							"curvePreferences": ["X25519", "secp256r1"]
 						}
 					}`),
 				},
@@ -29,6 +30,7 @@ func TestUpdateDeploymentObservedConfigHook(t *testing.T) {
 			expectedArgs: []string{
 				"--tls-custom-version=TLSv1.2",
 				"--tls-custom-ciphers=TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384",
+				"--tls-custom-curves=X25519,secp256r1",
 				"--tls-profile=custom",
 			},
 			expectError: false,
@@ -94,23 +96,58 @@ func TestUpdateDeploymentObservedConfigHook(t *testing.T) {
 			expectError:  true,
 		},
 		{
-			name: "valid complete TLS configuration with custom profile",
+			name: "all three TLS fields set",
 			operatorSpec: &operatorv1.OperatorSpec{
 				ObservedConfig: runtime.RawExtension{
 					Raw: []byte(`{
 						"olmTLSSecurityProfile": {
-							"minTLSVersion": "VersionTLS11",
-							"cipherSuites": ["TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384"]
+							"minTLSVersion": "VersionTLS12",
+							"cipherSuites": ["TLS_AES_128_GCM_SHA256"],
+							"curvePreferences": ["X25519", "secp256r1"]
 						}
 					}`),
 				},
 			},
 			expectedArgs: []string{
-				"--tls-custom-version=TLSv1.1",
-				"--tls-custom-ciphers=TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384",
+				"--tls-custom-version=TLSv1.2",
+				"--tls-custom-ciphers=TLS_AES_128_GCM_SHA256",
+				"--tls-custom-curves=X25519,secp256r1",
 				"--tls-profile=custom",
 			},
 			expectError: false,
+		},
+		{
+			name: "version and ciphers without curves",
+			operatorSpec: &operatorv1.OperatorSpec{
+				ObservedConfig: runtime.RawExtension{
+					Raw: []byte(`{
+						"olmTLSSecurityProfile": {
+							"minTLSVersion": "VersionTLS12",
+							"cipherSuites": ["TLS_AES_128_GCM_SHA256"]
+						}
+					}`),
+				},
+			},
+			expectedArgs: []string{
+				"--tls-custom-version=TLSv1.2",
+				"--tls-custom-ciphers=TLS_AES_128_GCM_SHA256",
+				"--tls-profile=custom",
+			},
+			expectError: false,
+		},
+		{
+			name: "curves only is an error",
+			operatorSpec: &operatorv1.OperatorSpec{
+				ObservedConfig: runtime.RawExtension{
+					Raw: []byte(`{
+						"olmTLSSecurityProfile": {
+							"curvePreferences": ["X25519", "secp256r1"]
+						}
+					}`),
+				},
+			},
+			expectedArgs: nil,
+			expectError:  true,
 		},
 		{
 			name:         "nil operatorSpec",

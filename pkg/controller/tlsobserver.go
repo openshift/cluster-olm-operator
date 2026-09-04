@@ -29,6 +29,11 @@ func TLSCipherSuitesPath() []string {
 	return []string{"olmTLSSecurityProfile", "cipherSuites"}
 }
 
+// TLSCurvePreferencesPath returns the path for the observed TLS curve preferences.
+func TLSCurvePreferencesPath() []string {
+	return []string{"olmTLSSecurityProfile", "curvePreferences"}
+}
+
 // OLMConfigObserverListers implements the configobserver.Listers interface and
 // apiserver.APIServerLister for use with the library-go ObserveTLSSecurityProfile
 type OLMConfigObserverListers struct {
@@ -100,35 +105,24 @@ func NewTLSObserverController(
 func observeTLSSecurityProfileForOLM(genericListers configobserver.Listers, recorder events.Recorder, existingConfig map[string]interface{}) (map[string]interface{}, []error) {
 	klog.Info("TLS observer: starting TLS security profile observation")
 
-	// Log the configuration paths being used
 	minTLSPath := TLSMinVersionPath()
 	cipherSuitesPath := TLSCipherSuitesPath()
+	curvePreferencesPath := TLSCurvePreferencesPath()
 	klog.Infof("TLS observer: using minTLSVersion path: %v", minTLSPath)
 	klog.Infof("TLS observer: using cipherSuites path: %v", cipherSuitesPath)
+	klog.Infof("TLS observer: using curvePreferences path: %v", curvePreferencesPath)
 
-	// Log current existing configuration if present
-	if len(existingConfig) > 0 {
-		klog.Infof("TLS observer: existing config keys: %v", getMapKeys(existingConfig))
-		if currentMinTLS, found, _ := unstructured.NestedString(existingConfig, minTLSPath...); found {
-			klog.Infof("TLS observer: current minTLSVersion: %s", currentMinTLS)
-		}
-		if currentCiphers, found, _ := unstructured.NestedStringSlice(existingConfig, cipherSuitesPath...); found {
-			klog.Infof("TLS observer: current cipherSuites count: %d", len(currentCiphers))
-		}
-	} else {
-		klog.Info("TLS observer: no existing configuration found")
-	}
+	logTLSConfig("existing", existingConfig, minTLSPath, cipherSuitesPath, curvePreferencesPath)
 
-	// Call the library-go function
-	observedConfig, errs := apiserver.ObserveTLSSecurityProfileWithPaths(
+	observedConfig, errs := apiserver.ObserveTLSSecurityProfileWithGroupPaths(
 		genericListers,
 		recorder,
 		existingConfig,
 		minTLSPath,
 		cipherSuitesPath,
+		curvePreferencesPath,
 	)
 
-	// Log the results
 	if len(errs) > 0 {
 		klog.Warningf("TLS observer: encountered %d errors during observation", len(errs))
 		for i, err := range errs {
@@ -138,22 +132,33 @@ func observeTLSSecurityProfileForOLM(genericListers configobserver.Listers, reco
 		klog.Info("TLS observer: observation completed without errors")
 	}
 
-	// Log observed configuration
-	if len(observedConfig) > 0 {
-		klog.Infof("TLS observer: observed config keys: %v", getMapKeys(observedConfig))
-		if newMinTLS, found, _ := unstructured.NestedString(observedConfig, minTLSPath...); found {
-			klog.Infof("TLS observer: observed minTLSVersion: %s", newMinTLS)
-		}
-		if newCiphers, found, _ := unstructured.NestedStringSlice(observedConfig, cipherSuitesPath...); found {
-			klog.Infof("TLS observer: observed %d cipher suites", len(newCiphers))
-			klog.Infof("TLS observer: cipher suites: %v", newCiphers)
-		}
-	} else {
-		klog.Info("TLS observer: no configuration observed")
-	}
+	logTLSConfig("observed", observedConfig, minTLSPath, cipherSuitesPath, curvePreferencesPath)
 
 	klog.Info("TLS observer: completed TLS security profile observation")
 	return observedConfig, errs
+}
+
+func logTLSConfig(label string, config map[string]interface{}, minTLSPath, cipherSuitesPath, curvePreferencesPath []string) {
+	if len(config) == 0 {
+		klog.Infof("TLS observer: no %s configuration found", label)
+		return
+	}
+	klog.Infof("TLS observer: %s config keys: %v", label, getMapKeys(config))
+	if v, found, err := unstructured.NestedString(config, minTLSPath...); err != nil {
+		klog.Warningf("TLS observer: error reading minTLSVersion from %s config: %v", label, err)
+	} else if found {
+		klog.Infof("TLS observer: %s minTLSVersion: %s", label, v)
+	}
+	if v, found, err := unstructured.NestedStringSlice(config, cipherSuitesPath...); err != nil {
+		klog.Warningf("TLS observer: error reading cipherSuites from %s config: %v", label, err)
+	} else if found {
+		klog.Infof("TLS observer: %s cipherSuites count: %d", label, len(v))
+	}
+	if v, found, err := unstructured.NestedStringSlice(config, curvePreferencesPath...); err != nil {
+		klog.Warningf("TLS observer: error reading curvePreferences from %s config: %v", label, err)
+	} else if found {
+		klog.Infof("TLS observer: %s curvePreferences count: %d", label, len(v))
+	}
 }
 
 // getMapKeys is a helper function to extract keys from a map for logging purposes
