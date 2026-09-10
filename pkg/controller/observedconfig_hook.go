@@ -121,16 +121,20 @@ func extractTLSConfigFromObservedConfig(operatorSpec *operatorv1.OperatorSpec) (
 		hasCurves = true
 	}
 
-	// minTLSVersion and cipherSuites must be set together, or neither may be
-	// set. Curve preferences are optional because the operand's TLS
-	// implementation supplies defaults when they are omitted.
+	// Valid configurations are no TLS settings, minTLSVersion with
+	// cipherSuites, or all three settings. Curve preferences are optional
+	// because the operand's TLS implementation supplies defaults when omitted.
 	switch {
 	case !hasVersion && !hasCiphers && !hasCurves:
 		// no customization
 	case hasVersion && hasCiphers:
 		args = append(args, "--tls-profile=custom")
-	default:
-		return nil, fmt.Errorf("invalid observedConfig for TLS: minTLSVersion and cipherSuites must be set together")
+	case !hasVersion && !hasCiphers:
+		return nil, fmt.Errorf("invalid observedConfig for TLS: missing minTLSVersion and cipherSuites")
+	case !hasVersion:
+		return nil, fmt.Errorf("invalid observedConfig for TLS: missing minTLSVersion")
+	case !hasCiphers:
+		return nil, fmt.Errorf("invalid observedConfig for TLS: missing cipherSuites")
 	}
 
 	return args, nil

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"strings"
 	"testing"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -13,6 +14,7 @@ func TestUpdateDeploymentObservedConfigHook(t *testing.T) {
 		operatorSpec *operatorv1.OperatorSpec
 		expectedArgs []string
 		expectError  bool
+		errorMessage string
 	}{
 		{
 			name: "valid TLS configuration",
@@ -66,6 +68,7 @@ func TestUpdateDeploymentObservedConfigHook(t *testing.T) {
 			},
 			expectedArgs: nil,
 			expectError:  true,
+			errorMessage: "missing cipherSuites",
 		},
 		{
 			name: "only cipherSuites",
@@ -80,9 +83,10 @@ func TestUpdateDeploymentObservedConfigHook(t *testing.T) {
 			},
 			expectedArgs: nil,
 			expectError:  true,
+			errorMessage: "missing minTLSVersion",
 		},
 		{
-			name: "TLS version translation",
+			name: "only minTLSVersion with TLS 1.1",
 			operatorSpec: &operatorv1.OperatorSpec{
 				ObservedConfig: runtime.RawExtension{
 					Raw: []byte(`{
@@ -94,6 +98,7 @@ func TestUpdateDeploymentObservedConfigHook(t *testing.T) {
 			},
 			expectedArgs: nil,
 			expectError:  true,
+			errorMessage: "missing cipherSuites",
 		},
 		{
 			name: "all three TLS fields set",
@@ -148,6 +153,39 @@ func TestUpdateDeploymentObservedConfigHook(t *testing.T) {
 			},
 			expectedArgs: nil,
 			expectError:  true,
+			errorMessage: "missing minTLSVersion and cipherSuites",
+		},
+		{
+			name: "minTLSVersion and curvePreferences without cipherSuites",
+			operatorSpec: &operatorv1.OperatorSpec{
+				ObservedConfig: runtime.RawExtension{
+					Raw: []byte(`{
+						"olmTLSSecurityProfile": {
+							"minTLSVersion": "VersionTLS12",
+							"curvePreferences": ["X25519", "secp256r1"]
+						}
+					}`),
+				},
+			},
+			expectedArgs: nil,
+			expectError:  true,
+			errorMessage: "missing cipherSuites",
+		},
+		{
+			name: "cipherSuites and curvePreferences without minTLSVersion",
+			operatorSpec: &operatorv1.OperatorSpec{
+				ObservedConfig: runtime.RawExtension{
+					Raw: []byte(`{
+						"olmTLSSecurityProfile": {
+							"cipherSuites": ["TLS_AES_128_GCM_SHA256"],
+							"curvePreferences": ["X25519", "secp256r1"]
+						}
+					}`),
+				},
+			},
+			expectedArgs: nil,
+			expectError:  true,
+			errorMessage: "missing minTLSVersion",
 		},
 		{
 			name:         "nil operatorSpec",
@@ -166,6 +204,9 @@ func TestUpdateDeploymentObservedConfigHook(t *testing.T) {
 			}
 			if !tt.expectError && err != nil {
 				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.errorMessage != "" && !strings.Contains(err.Error(), tt.errorMessage) {
+				t.Fatalf("expected error containing %q, got %q", tt.errorMessage, err)
 			}
 
 			// Verify the arguments
