@@ -6,10 +6,10 @@ require (
 	github.com/TwiN/deepmerge v0.2.2
 	github.com/blang/semver/v4 v4.0.0
 	github.com/go-logr/logr v1.4.4
-	github.com/openshift/api v0.0.0-20260727141720-967cc4c36c9b
+	github.com/openshift/api v0.0.0-20260805215214-cfb63858e9d7
 	github.com/openshift/build-machinery-go v0.0.0-20250530140348-dc5b2804eeee
-	github.com/openshift/client-go v0.0.0-20260723174158-ae2315de9d73
-	github.com/openshift/library-go v0.0.0-20260727154952-0aacacf2673e
+	github.com/openshift/client-go v0.0.0-20260806041845-b74fb348f1e7
+	github.com/openshift/library-go v0.0.0-20260904093542-946ee696bcb5
 	github.com/operator-framework/helm-operator-plugins v0.9.1
 	github.com/operator-framework/operator-controller v1.11.0
 	github.com/operator-framework/operator-registry v1.73.0
