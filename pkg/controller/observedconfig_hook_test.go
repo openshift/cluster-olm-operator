@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"strings"
 	"testing"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -13,6 +14,7 @@ func TestUpdateDeploymentObservedConfigHook(t *testing.T) {
 		operatorSpec *operatorv1.OperatorSpec
 		expectedArgs []string
 		expectError  bool
+		errorMessage string
 	}{
 		{
 			name: "valid TLS configuration",
@@ -21,7 +23,8 @@ func TestUpdateDeploymentObservedConfigHook(t *testing.T) {
 					Raw: []byte(`{
 						"olmTLSSecurityProfile": {
 							"minTLSVersion": "VersionTLS12",
-							"cipherSuites": ["TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384"]
+							"cipherSuites": ["TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384"],
+							"curvePreferences": ["X25519", "secp256r1"]
 						}
 					}`),
 				},
@@ -29,6 +32,7 @@ func TestUpdateDeploymentObservedConfigHook(t *testing.T) {
 			expectedArgs: []string{
 				"--tls-custom-version=TLSv1.2",
 				"--tls-custom-ciphers=TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384",
+				"--tls-custom-curves=X25519,secp256r1",
 				"--tls-profile=custom",
 			},
 			expectError: false,
@@ -64,6 +68,7 @@ func TestUpdateDeploymentObservedConfigHook(t *testing.T) {
 			},
 			expectedArgs: nil,
 			expectError:  true,
+			errorMessage: "missing cipherSuites",
 		},
 		{
 			name: "only cipherSuites",
@@ -78,9 +83,10 @@ func TestUpdateDeploymentObservedConfigHook(t *testing.T) {
 			},
 			expectedArgs: nil,
 			expectError:  true,
+			errorMessage: "missing minTLSVersion",
 		},
 		{
-			name: "TLS version translation",
+			name: "only minTLSVersion with TLS 1.1",
 			operatorSpec: &operatorv1.OperatorSpec{
 				ObservedConfig: runtime.RawExtension{
 					Raw: []byte(`{
@@ -92,25 +98,94 @@ func TestUpdateDeploymentObservedConfigHook(t *testing.T) {
 			},
 			expectedArgs: nil,
 			expectError:  true,
+			errorMessage: "missing cipherSuites",
 		},
 		{
-			name: "valid complete TLS configuration with custom profile",
+			name: "all three TLS fields set",
 			operatorSpec: &operatorv1.OperatorSpec{
 				ObservedConfig: runtime.RawExtension{
 					Raw: []byte(`{
 						"olmTLSSecurityProfile": {
-							"minTLSVersion": "VersionTLS11",
-							"cipherSuites": ["TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384"]
+							"minTLSVersion": "VersionTLS12",
+							"cipherSuites": ["TLS_AES_128_GCM_SHA256"],
+							"curvePreferences": ["X25519", "secp256r1"]
 						}
 					}`),
 				},
 			},
 			expectedArgs: []string{
-				"--tls-custom-version=TLSv1.1",
-				"--tls-custom-ciphers=TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384",
+				"--tls-custom-version=TLSv1.2",
+				"--tls-custom-ciphers=TLS_AES_128_GCM_SHA256",
+				"--tls-custom-curves=X25519,secp256r1",
 				"--tls-profile=custom",
 			},
 			expectError: false,
+		},
+		{
+			name: "version and ciphers without curves",
+			operatorSpec: &operatorv1.OperatorSpec{
+				ObservedConfig: runtime.RawExtension{
+					Raw: []byte(`{
+						"olmTLSSecurityProfile": {
+							"minTLSVersion": "VersionTLS12",
+							"cipherSuites": ["TLS_AES_128_GCM_SHA256"]
+						}
+					}`),
+				},
+			},
+			expectedArgs: []string{
+				"--tls-custom-version=TLSv1.2",
+				"--tls-custom-ciphers=TLS_AES_128_GCM_SHA256",
+				"--tls-profile=custom",
+			},
+			expectError: false,
+		},
+		{
+			name: "curves only is an error",
+			operatorSpec: &operatorv1.OperatorSpec{
+				ObservedConfig: runtime.RawExtension{
+					Raw: []byte(`{
+						"olmTLSSecurityProfile": {
+							"curvePreferences": ["X25519", "secp256r1"]
+						}
+					}`),
+				},
+			},
+			expectedArgs: nil,
+			expectError:  true,
+			errorMessage: "missing minTLSVersion and cipherSuites",
+		},
+		{
+			name: "minTLSVersion and curvePreferences without cipherSuites",
+			operatorSpec: &operatorv1.OperatorSpec{
+				ObservedConfig: runtime.RawExtension{
+					Raw: []byte(`{
+						"olmTLSSecurityProfile": {
+							"minTLSVersion": "VersionTLS12",
+							"curvePreferences": ["X25519", "secp256r1"]
+						}
+					}`),
+				},
+			},
+			expectedArgs: nil,
+			expectError:  true,
+			errorMessage: "missing cipherSuites",
+		},
+		{
+			name: "cipherSuites and curvePreferences without minTLSVersion",
+			operatorSpec: &operatorv1.OperatorSpec{
+				ObservedConfig: runtime.RawExtension{
+					Raw: []byte(`{
+						"olmTLSSecurityProfile": {
+							"cipherSuites": ["TLS_AES_128_GCM_SHA256"],
+							"curvePreferences": ["X25519", "secp256r1"]
+						}
+					}`),
+				},
+			},
+			expectedArgs: nil,
+			expectError:  true,
+			errorMessage: "missing minTLSVersion",
 		},
 		{
 			name:         "nil operatorSpec",
@@ -129,6 +204,9 @@ func TestUpdateDeploymentObservedConfigHook(t *testing.T) {
 			}
 			if !tt.expectError && err != nil {
 				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.errorMessage != "" && !strings.Contains(err.Error(), tt.errorMessage) {
+				t.Fatalf("expected error containing %q, got %q", tt.errorMessage, err)
 			}
 
 			// Verify the arguments

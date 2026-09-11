@@ -78,6 +78,7 @@ func extractTLSConfigFromObservedConfig(operatorSpec *operatorv1.OperatorSpec) (
 	}
 
 	var args []string
+	var hasVersion, hasCiphers, hasCurves bool
 
 	// Extract minTLSVersion
 	if minTLSVersion, found, err := unstructured.NestedString(tlsProfile, "minTLSVersion"); err != nil {
@@ -96,24 +97,44 @@ func extractTLSConfigFromObservedConfig(operatorSpec *operatorv1.OperatorSpec) (
 		}
 		args = append(args, fmt.Sprintf("--tls-custom-version=%s", argTLSVersion))
 		klog.V(3).Infof("Extracted minTLSVersion: %s", argTLSVersion)
+		hasVersion = true
 	}
 
 	// Extract cipherSuites
 	if cipherSuites, found, err := unstructured.NestedStringSlice(tlsProfile, "cipherSuites"); err != nil {
 		return nil, fmt.Errorf("error accessing cipherSuites: %w", err)
 	} else if found && len(cipherSuites) > 0 {
-		// Join cipher suites with commas for environment variable
 		cipherSuitesStr := strings.Join(cipherSuites, ",")
 		args = append(args, fmt.Sprintf("--tls-custom-ciphers=%s", cipherSuitesStr))
 		klog.V(3).Infof("Extracted %d cipher suites: %s", len(cipherSuites), cipherSuitesStr)
+		hasCiphers = true
 	}
 
-	switch len(args) {
-	case 0:
-	case 2:
+	// Extract curvePreferences. FIPS filtering is already applied by library-go's
+	// observer before storing this value.
+	if curvePrefs, found, err := unstructured.NestedStringSlice(tlsProfile, "curvePreferences"); err != nil {
+		return nil, fmt.Errorf("error accessing curvePreferences: %w", err)
+	} else if found && len(curvePrefs) > 0 {
+		curvesStr := strings.Join(curvePrefs, ",")
+		args = append(args, fmt.Sprintf("--tls-custom-curves=%s", curvesStr))
+		klog.V(3).Infof("Extracted %d curve preferences: %s", len(curvePrefs), curvesStr)
+		hasCurves = true
+	}
+
+	// Valid configurations are no TLS settings, minTLSVersion with
+	// cipherSuites, or all three settings. Curve preferences are optional
+	// because the operand's TLS implementation supplies defaults when omitted.
+	switch {
+	case !hasVersion && !hasCiphers && !hasCurves:
+		// no customization
+	case hasVersion && hasCiphers:
 		args = append(args, "--tls-profile=custom")
-	default:
-		return nil, fmt.Errorf("invalid observedConfig for TLS, missing argument")
+	case !hasVersion && !hasCiphers:
+		return nil, fmt.Errorf("invalid observedConfig for TLS: missing minTLSVersion and cipherSuites")
+	case !hasVersion:
+		return nil, fmt.Errorf("invalid observedConfig for TLS: missing minTLSVersion")
+	case !hasCiphers:
+		return nil, fmt.Errorf("invalid observedConfig for TLS: missing cipherSuites")
 	}
 
 	return args, nil

@@ -10,6 +10,7 @@ func TestTLSObserverPaths(t *testing.T) {
 	// Test that the configuration paths are correctly defined
 	expectedMinTLSPath := []string{"olmTLSSecurityProfile", "minTLSVersion"}
 	expectedCipherSuitesPath := []string{"olmTLSSecurityProfile", "cipherSuites"}
+	expectedCurvePreferencesPath := []string{"olmTLSSecurityProfile", "curvePreferences"}
 
 	if !equalStringSlices(TLSMinVersionPath(), expectedMinTLSPath) {
 		t.Errorf("TLSMinVersionPath() = %v, want %v", TLSMinVersionPath(), expectedMinTLSPath)
@@ -17,6 +18,10 @@ func TestTLSObserverPaths(t *testing.T) {
 
 	if !equalStringSlices(TLSCipherSuitesPath(), expectedCipherSuitesPath) {
 		t.Errorf("TLSCipherSuitesPath() = %v, want %v", TLSCipherSuitesPath(), expectedCipherSuitesPath)
+	}
+
+	if !equalStringSlices(TLSCurvePreferencesPath(), expectedCurvePreferencesPath) {
+		t.Errorf("TLSCurvePreferencesPath() = %v, want %v", TLSCurvePreferencesPath(), expectedCurvePreferencesPath)
 	}
 }
 
@@ -57,6 +62,9 @@ func TestLibraryGoIntegration(t *testing.T) {
 	}
 	if len(intermediateProfile.Ciphers) == 0 {
 		t.Errorf("Intermediate profile has no cipher suites")
+	}
+	if len(intermediateProfile.Groups) == 0 {
+		t.Errorf("Intermediate profile has no curve groups")
 	}
 }
 
