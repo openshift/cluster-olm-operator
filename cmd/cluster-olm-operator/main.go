@@ -482,19 +482,22 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 				log.V(4).Info("Failed to get operator state in TLS change handler", "error", err)
 				return
 			}
-			newMinTLS, newCiphers := controller.TLSProfileFromObservedConfig(operatorSpec)
+			newMinTLS, newCiphers, newCurvePreferences := controller.TLSProfileFromObservedConfig(operatorSpec)
 			if newMinTLS == "" {
 				return // observer hasn't stored a TLS profile yet
 			}
-			if newMinTLS == initialTLSServingInfo.MinTLSVersion && reflect.DeepEqual(newCiphers, initialTLSServingInfo.CipherSuites) {
+			if newMinTLS == initialTLSServingInfo.MinTLSVersion &&
+				reflect.DeepEqual(newCiphers, initialTLSServingInfo.CipherSuites) &&
+				reflect.DeepEqual(newCurvePreferences, initialTLSServingInfo.CurvePreferences) {
 				return // unchanged
 			}
 			log.Info("TLS security profile changed, updating metrics server config to trigger restart",
 				"old", initialTLSServingInfo.MinTLSVersion, "new", newMinTLS)
 			newServingInfo := configv1.HTTPServingInfo{
 				ServingInfo: configv1.ServingInfo{
-					MinTLSVersion: newMinTLS,
-					CipherSuites:  newCiphers,
+					MinTLSVersion:    newMinTLS,
+					CipherSuites:     newCiphers,
+					CurvePreferences: newCurvePreferences,
 				},
 			}
 			if err := controller.UpdateMetricsServerConfigFile(metricsConfigFile, newServingInfo); err != nil {
