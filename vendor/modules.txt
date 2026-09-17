@@ -371,7 +371,7 @@ github.com/opencontainers/go-digest
 ## explicit; go 1.18
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
-# github.com/openshift/api v0.0.0-20260805215214-cfb63858e9d7
+# github.com/openshift/api v0.0.0-20260917163254-fc720207812e
 ## explicit; go 1.26.0
 github.com/openshift/api
 github.com/openshift/api/annotations
@@ -494,7 +494,7 @@ github.com/openshift/client-go/operator/informers/externalversions/operator/v1
 github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1
 github.com/openshift/client-go/operator/listers/operator/v1
 github.com/openshift/client-go/operator/listers/operator/v1alpha1
-# github.com/openshift/library-go v0.0.0-20260904093542-946ee696bcb5
+# github.com/openshift/library-go v0.0.0-20260904093542-946ee696bcb5 => github.com/tmshort/library-go v0.0.0-20260917172754-f79f616bbd9b
 ## explicit; go 1.26.0
 github.com/openshift/library-go/pkg/apiserver/jsonpatch
 github.com/openshift/library-go/pkg/authorization/hardcodedauthorizer
@@ -1933,3 +1933,4 @@ sigs.k8s.io/structured-merge-diff/v6/value
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v3
 sigs.k8s.io/yaml/kyaml
+# github.com/openshift/library-go => github.com/tmshort/library-go v0.0.0-20260917172754-f79f616bbd9b
