@@ -6,7 +6,7 @@ require (
 	github.com/TwiN/deepmerge v0.2.2
 	github.com/blang/semver/v4 v4.0.0
 	github.com/go-logr/logr v1.4.4
-	github.com/openshift/api v0.0.0-20260805215214-cfb63858e9d7
+	github.com/openshift/api v0.0.0-20260917163254-fc720207812e
 	github.com/openshift/build-machinery-go v0.0.0-20250530140348-dc5b2804eeee
 	github.com/openshift/client-go v0.0.0-20260806041845-b74fb348f1e7
 	github.com/openshift/library-go v0.0.0-20260904093542-946ee696bcb5
@@ -184,3 +184,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+replace github.com/openshift/library-go => github.com/tmshort/library-go v0.0.0-20260917172754-f79f616bbd9b

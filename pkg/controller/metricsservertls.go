@@ -14,10 +14,12 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/klog/v2"
 )
 
 // GetMetricsServerTLSServingInfo reads the cluster TLS security profile from the APIServer
-// config and returns a configv1.HTTPServingInfo populated with MinTLSVersion and CipherSuites.
+// config and returns a configv1.HTTPServingInfo populated with MinTLSVersion,
+// CipherSuites, and CurvePreferences.
 // Returns an empty HTTPServingInfo (with no error) if the APIServer resource is not found.
 func GetMetricsServerTLSServingInfo(ctx context.Context, configClient configclient.Interface) (configv1.HTTPServingInfo, error) {
 	apiServer, err := configClient.ConfigV1().APIServers().Get(ctx, "cluster", metav1.GetOptions{})
@@ -28,19 +30,22 @@ func GetMetricsServerTLSServingInfo(ctx context.Context, configClient configclie
 		return configv1.HTTPServingInfo{}, fmt.Errorf("error reading APIServer config: %w", err)
 	}
 
-	minTLSVersion, cipherSuites := tlsSettingsFromProfile(apiServer.Spec.TLSSecurityProfile)
+	minTLSVersion, cipherSuites, curvePreferences := tlsSettingsFromProfile(apiServer.Spec.TLSSecurityProfile)
 	return configv1.HTTPServingInfo{
 		ServingInfo: configv1.ServingInfo{
-			MinTLSVersion: minTLSVersion,
-			CipherSuites:  cipherSuites,
+			MinTLSVersion:    minTLSVersion,
+			CipherSuites:     cipherSuites,
+			CurvePreferences: curvePreferences,
 		},
 	}, nil
 }
 
-// tlsSettingsFromProfile extracts the minimum TLS version and IANA cipher suite names
-// from a TLSSecurityProfile. Mirrors the private getSecurityProfileCiphers in library-go.
-func tlsSettingsFromProfile(profile *configv1.TLSSecurityProfile) (string, []string) {
-	profileType := configv1.TLSProfileIntermediateType
+// tlsSettingsFromProfile extracts the minimum TLS version, IANA cipher suite names,
+// and Go CurveIDs from a TLSSecurityProfile. It mirrors library-go's TLS profile
+// resolution while converting API TLSGroup values to the form used by the metrics
+// server's SecureServingOptions.
+func tlsSettingsFromProfile(profile *configv1.TLSSecurityProfile) (string, []string, []int32) {
+	profileType := crypto.DefaultTLSProfileType
 	if profile != nil {
 		profileType = profile.Type
 	}
@@ -55,26 +60,50 @@ func tlsSettingsFromProfile(profile *configv1.TLSSecurityProfile) (string, []str
 	}
 
 	if profileSpec == nil {
-		profileSpec = configv1.TLSProfiles[configv1.TLSProfileIntermediateType]
+		profileSpec = configv1.TLSProfiles[crypto.DefaultTLSProfileType]
 	}
 
-	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers)
+	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers), curvePreferencesFromTLSGroups(profileSpec.Groups)
 }
 
-// TLSProfileFromObservedConfig extracts the TLS minVersion and cipherSuites stored in the
-// operator's observedConfig at the olmTLSSecurityProfile paths. Returns empty strings/nil
-// if the observedConfig is absent or unparseable.
-func TLSProfileFromObservedConfig(operatorSpec *operatorv1.OperatorSpec) (string, []string) {
+// TLSProfileFromObservedConfig extracts the TLS settings stored in the operator's
+// observedConfig at the olmTLSSecurityProfile paths. Curve preference names are
+// converted to the numeric Go CurveIDs used by the metrics server. It returns empty
+// values if the observedConfig is absent or unparseable.
+func TLSProfileFromObservedConfig(operatorSpec *operatorv1.OperatorSpec) (string, []string, []int32) {
 	if operatorSpec == nil || len(operatorSpec.ObservedConfig.Raw) == 0 {
-		return "", nil
+		return "", nil, nil
 	}
 	var cfg map[string]interface{}
 	if err := json.Unmarshal(operatorSpec.ObservedConfig.Raw, &cfg); err != nil {
-		return "", nil
+		return "", nil, nil
 	}
-	minTLS, _, _ := unstructured.NestedString(cfg, TLSMinVersionPath()...)
-	ciphers, _, _ := unstructured.NestedStringSlice(cfg, TLSCipherSuitesPath()...)
-	return minTLS, ciphers
+	minTLS, _, err := unstructured.NestedString(cfg, TLSMinVersionPath()...)
+	if err != nil {
+		return "", nil, nil
+	}
+	ciphers, _, err := unstructured.NestedStringSlice(cfg, TLSCipherSuitesPath()...)
+	if err != nil {
+		return "", nil, nil
+	}
+	groups, _, err := unstructured.NestedStringSlice(cfg, TLSCurvePreferencesPath()...)
+	if err != nil {
+		return "", nil, nil
+	}
+	return minTLS, ciphers, curvePreferencesFromTLSGroups(groups)
+}
+
+// curvePreferencesFromTLSGroups converts OpenShift TLS group names to the numeric
+// CurveIDs accepted by SecureServingOptions and logs groups unsupported by the
+// running Go TLS implementation.
+func curvePreferencesFromTLSGroups[T ~string](groups []T) []int32 {
+	curvePreferences, unrecognizedGroups := crypto.TLSGroupsToCurvePreferences(groups)
+	for _, group := range unrecognizedGroups {
+		// This should only occur when the API adds a group before this binary's
+		// Go TLS implementation can support it.
+		klog.Warningf("Dropping TLS group %q: not supported by Go's crypto/tls", group)
+	}
+	return curvePreferences
 }
 
 // WriteMetricsServerConfigFile writes a GenericOperatorConfig JSON file containing the
