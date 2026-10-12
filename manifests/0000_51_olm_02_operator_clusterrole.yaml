@@ -230,6 +230,10 @@ rules:
     - operator-controller-metrics-reader
     - operator-controller-proxy-role
     - operator-controller-leader-election-role
+    - object-controller-metrics-monitor-role
+    - object-controller-metrics-reader
+    - object-controller-proxy-role
+    - object-controller-leader-election-role
     - bundle-reader
     - bundle-uploader
     - core-admin

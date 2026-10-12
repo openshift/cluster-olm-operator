@@ -54,6 +54,12 @@ const (
 	operatorControllerServiceAccount              = "operator-controller-controller-manager"
 	operatorControllerClusterAdminRoleBindingName = "operator-controller-cluster-admin-rolebinding" // 5.0+ (cluster-admin)
 	operatorControllerManagerRoleName             = "operator-controller-manager-role"
+
+	// object-controller resource identifiers. object-controller is baked into the
+	// operator-controller image and runs in the same namespace (operatorControllerNamespace),
+	// but is a separate manager with its own ServiceAccount and cluster-admin ClusterRoleBinding.
+	objectControllerServiceAccount              = "object-controller-controller-manager"
+	objectControllerClusterAdminRoleBindingName = "object-controller-cluster-admin-rolebinding"
 )
 
 var legacyOperatorControllerRoleBindingNames = []string{
@@ -144,12 +150,13 @@ func newStartCommand() *cobra.Command {
 	return cmd
 }
 
-// waitForOperatorControllerResources waits for the operator-controller namespace and
+// waitForComponentResources waits for the operatorControllerNamespace and the given
 // ServiceAccount to be created by the static resource controllers before attempting to
 // verify RBAC propagation. This prevents the SAR check from timing out when resources
-// don't exist yet.
-func waitForOperatorControllerResources(ctx context.Context, cl *clients.Clients, log klog.Logger) error {
-	log.Info("Waiting for operator-controller resources to be created", "namespace", operatorControllerNamespace, "serviceAccount", operatorControllerServiceAccount)
+// don't exist yet. All OLMv1 managers (operator-controller, object-controller) share
+// operatorControllerNamespace, so only the ServiceAccount varies per component.
+func waitForComponentResources(ctx context.Context, cl *clients.Clients, serviceAccount string, log klog.Logger) error {
+	log.Info("Waiting for component resources to be created", "namespace", operatorControllerNamespace, "serviceAccount", serviceAccount)
 
 	// Wait for namespace to exist
 	err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
@@ -171,34 +178,36 @@ func waitForOperatorControllerResources(ctx context.Context, cl *clients.Clients
 
 	// Wait for ServiceAccount to exist
 	err = wait.PollUntilContextTimeout(ctx, 1*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
-		_, err := cl.KubeClient.CoreV1().ServiceAccounts(operatorControllerNamespace).Get(ctx, operatorControllerServiceAccount, metav1.GetOptions{})
+		_, err := cl.KubeClient.CoreV1().ServiceAccounts(operatorControllerNamespace).Get(ctx, serviceAccount, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
-				log.V(2).Info("ServiceAccount does not exist yet, waiting", "serviceAccount", operatorControllerServiceAccount)
+				log.V(2).Info("ServiceAccount does not exist yet, waiting", "serviceAccount", serviceAccount)
 				return false, nil // Continue polling
 			}
 			// For other errors (network, permissions, etc.), fail fast
 			return false, err
 		}
-		log.Info("ServiceAccount created", "serviceAccount", operatorControllerServiceAccount)
+		log.Info("ServiceAccount created", "serviceAccount", serviceAccount)
 		return true, nil
 	})
 	if err != nil {
-		return fmt.Errorf("timeout waiting for ServiceAccount %s/%s to be created: %w", operatorControllerNamespace, operatorControllerServiceAccount, err)
+		return fmt.Errorf("timeout waiting for ServiceAccount %s/%s to be created: %w", operatorControllerNamespace, serviceAccount, err)
 	}
 
 	return nil
 }
 
-// waitForOperatorControllerRBAC waits for the ClusterRoleBinding that grants the
-// operator-controller ServiceAccount access to the privileged SCC to be created and
-// propagated through the kube-apiserver's RBAC authorization cache.
-// This function assumes the namespace and ServiceAccount already exist.
-// Returns the name of the ClusterRoleBinding that was found.
-func waitForOperatorControllerRBAC(ctx context.Context, cl *clients.Clients, log klog.Logger) (string, error) {
-	crbNames := append([]string{operatorControllerClusterAdminRoleBindingName}, legacyOperatorControllerRoleBindingNames...)
-
-	log.Info("Waiting for operator-controller RBAC to be created and propagated")
+// waitForComponentRBAC waits for one of the candidate ClusterRoleBindings that grant the
+// component ServiceAccount (in operatorControllerNamespace) access to the privileged SCC to
+// be created and propagated through the kube-apiserver's RBAC authorization cache. This
+// function assumes the namespace and ServiceAccount already exist. Returns the name of the
+// ClusterRoleBinding that was found.
+//
+// RBAC propagation is per-subject, so each component manager (operator-controller,
+// object-controller, ...) that runs its own privileged pod under its own ServiceAccount
+// needs its own wait: a passing check for one SA says nothing about another.
+func waitForComponentRBAC(ctx context.Context, cl *clients.Clients, serviceAccount string, crbNames []string, log klog.Logger) (string, error) {
+	log.Info("Waiting for component RBAC to be created and propagated", "serviceAccount", serviceAccount)
 
 	var foundCRB string
 	// Wait for ClusterRoleBinding to exist
@@ -222,14 +231,15 @@ func waitForOperatorControllerRBAC(ctx context.Context, cl *clients.Clients, log
 	}
 
 	// Poll using SubjectAccessReview to verify RBAC authorization cache propagation.
-	// The ClusterRoleBinding grants "use" permission on the "privileged" SCC.
-	// We verify that the operator-controller ServiceAccount can actually use the SCC
-	// by polling the authorization API until the permission is recognized.
+	// The binding grants the ServiceAccount cluster-admin (which subsumes "use" on the
+	// "privileged" SCC); we poll "use" on the privileged SCC as a representative signal
+	// that the authorization cache has propagated far enough for SCC admission to admit
+	// the component's privileged pod.
 	log.Info("ClusterRoleBinding exists, polling RBAC authorization for SCC access", "name", foundCRB)
 	err = wait.PollUntilContextTimeout(ctx, 1*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
 		sar := &authorizationv1.SubjectAccessReview{
 			Spec: authorizationv1.SubjectAccessReviewSpec{
-				User: fmt.Sprintf("system:serviceaccount:%s:%s", operatorControllerNamespace, operatorControllerServiceAccount),
+				User: fmt.Sprintf("system:serviceaccount:%s:%s", operatorControllerNamespace, serviceAccount),
 				ResourceAttributes: &authorizationv1.ResourceAttributes{
 					Verb:     "use",
 					Group:    "security.openshift.io",
@@ -248,7 +258,7 @@ func waitForOperatorControllerRBAC(ctx context.Context, cl *clients.Clients, log
 			return false, err
 		}
 		if result.Status.Allowed {
-			log.Info("RBAC authorization confirmed: ServiceAccount can use privileged SCC")
+			log.Info("RBAC authorization confirmed: ServiceAccount can use privileged SCC", "serviceAccount", serviceAccount)
 			return true, nil
 		}
 		log.V(2).Info("RBAC not yet propagated, waiting", "reason", result.Status.Reason)
@@ -282,6 +292,59 @@ func cleanupOldOperatorControllerRBAC(ctx context.Context, cl *clients.Clients, 
 	} else if err == nil {
 		log.Info("Cleaned up old ClusterRole", "name", operatorControllerManagerRoleName)
 	}
+}
+
+// waitForOLMv1ComponentsRBAC blocks until the RBAC that lets the privileged OLMv1 component
+// pods be admitted has propagated through the kube-apiserver's authorization cache, so their
+// Deployments are not created before the SCC admission plugin recognizes the permissions
+// (the race that caused flaky SCC denial events; see OCPBUGS-77899).
+//
+// operator-controller is deployed whenever this is reached. object-controller is a separate
+// manager (baked into the operator-controller image) with its own ServiceAccount, and its pod
+// also requires the privileged SCC, so it needs its own per-subject wait. It is only waited on
+// when its ServiceAccount was actually rendered (relatedObjects reflects the operator-controller
+// image's chart output). Keying on the BoxcutterRuntime feature gate instead would hang for the
+// full timeout on an operator-controller image that predates the object-controller split, since
+// the gate can be enabled before the image ships the object-controller resources.
+func waitForOLMv1ComponentsRBAC(ctx context.Context, cl *clients.Clients, relatedObjects []configv1.ObjectReference, log klog.Logger) error {
+	// The static resource controllers run asynchronously in goroutines, so we poll until the
+	// namespace and ServiceAccount exist before verifying RBAC propagation.
+	if err := waitForComponentResources(ctx, cl, operatorControllerServiceAccount, log); err != nil {
+		return err
+	}
+	operatorControllerCRBNames := append([]string{operatorControllerClusterAdminRoleBindingName}, legacyOperatorControllerRoleBindingNames...)
+	foundCRB, err := waitForComponentRBAC(ctx, cl, operatorControllerServiceAccount, operatorControllerCRBNames, log)
+	if err != nil {
+		return err
+	}
+	if foundCRB == operatorControllerClusterAdminRoleBindingName {
+		cleanupOldOperatorControllerRBAC(ctx, cl, log)
+	}
+
+	// object-controller (only when its resources were rendered; no legacy RBAC to clean up).
+	if objectControllerRendered(relatedObjects) {
+		if err := waitForComponentResources(ctx, cl, objectControllerServiceAccount, log); err != nil {
+			return err
+		}
+		if _, err := waitForComponentRBAC(ctx, cl, objectControllerServiceAccount, []string{objectControllerClusterAdminRoleBindingName}, log); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// objectControllerRendered reports whether the Helm render produced the object-controller
+// ServiceAccount in operatorControllerNamespace. relatedObjects contains an ObjectReference for
+// every rendered manifest, so this reflects what the operator-controller image's chart actually
+// ships rather than what a feature gate implies.
+func objectControllerRendered(relatedObjects []configv1.ObjectReference) bool {
+	for _, ref := range relatedObjects {
+		if ref.Resource == "serviceaccounts" && ref.Namespace == operatorControllerNamespace && ref.Name == objectControllerServiceAccount {
+			return true
+		}
+	}
+	return false
 }
 
 func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metricsConfigFile string) error {
@@ -535,24 +598,8 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 	shouldWaitForOperatorController := cb.UseExperimentalFeatureSet() || hasEnabledFeatureGates
 
 	if shouldWaitForOperatorController {
-		// First, wait for the static resource controllers to create the namespace and ServiceAccount.
-		// The static controllers run asynchronously in goroutines, so we need to poll until the
-		// resources exist before we can verify RBAC propagation.
-		if err := waitForOperatorControllerResources(ctx, cl, log); err != nil {
+		if err := waitForOLMv1ComponentsRBAC(ctx, cl, relatedObjects, log); err != nil {
 			return err
-		}
-
-		// Now that the resources exist, wait for the ClusterRoleBinding that grants SCC access
-		// to be created and propagated through the kube-apiserver's RBAC cache. This ensures
-		// the SCC admission plugin recognizes the permissions before we create the Deployment,
-		// preventing the race condition that caused flaky SCC denial events.
-		foundCRB, err := waitForOperatorControllerRBAC(ctx, cl, log)
-		if err != nil {
-			return err
-		}
-
-		if foundCRB == operatorControllerClusterAdminRoleBindingName {
-			cleanupOldOperatorControllerRBAC(ctx, cl, log)
 		}
 	}
 
