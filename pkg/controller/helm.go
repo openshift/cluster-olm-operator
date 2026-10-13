@@ -81,6 +81,14 @@ func (b *Builder) renderHelmTemplate(helmPath, manifestDir string) error {
 	if err := values.SetStringValue("options.operatorController.deployment.image", os.Getenv("OPERATOR_CONTROLLER_IMAGE")); err != nil {
 		return fmt.Errorf("error setting OPERATOR_CONTROLLER_IMAGE: %w", err)
 	}
+	// object-controller is baked into the operator-controller image and reuses it. The upstream
+	// values pin options.objectController.deployment.image to the ${OPERATOR_CONTROLLER_IMAGE}
+	// placeholder, which cluster-olm-operator resolves here via SetStringValue (it does not
+	// env-substitute values files). Without this the rendered object-controller Deployment would
+	// use the literal placeholder string as its image.
+	if err := values.SetStringValue("options.objectController.deployment.image", os.Getenv("OPERATOR_CONTROLLER_IMAGE")); err != nil {
+		return fmt.Errorf("error setting OBJECT_CONTROLLER_IMAGE: %w", err)
+	}
 	// OCP 4.23 and 5.0 are co-released. If catalogd.yaml pins "v5.0" but RELEASE_VERSION is
 	// a 4.x stream, substitute the 4.x catalog tag so images match the release stream.
 	// For 5.x releases (including 5.1) the value in catalogd.yaml is left untouched.
@@ -99,8 +107,10 @@ func (b *Builder) renderHelmTemplate(helmPath, manifestDir string) error {
 		}{
 			{"options.catalogd.deployment.replicas", 2},
 			{"options.operatorController.deployment.replicas", 2},
+			{"options.objectController.deployment.replicas", 2},
 			{"options.catalogd.podDisruptionBudget.enabled", true},
 			{"options.operatorController.podDisruptionBudget.enabled", true},
+			{"options.objectController.podDisruptionBudget.enabled", true},
 		}
 		for _, o := range haOverrides {
 			var err error
