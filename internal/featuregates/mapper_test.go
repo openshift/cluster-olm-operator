@@ -30,7 +30,6 @@ func TestMapper_DownstreamFeatureGates(t *testing.T) {
 	gates := mapper.DownstreamFeatureGates()
 
 	expectedGates := []configv1.FeatureGateName{
-		features.FeatureGateNewOLMOwnSingleNamespace,
 		features.FeatureGateNewOLMWebhookProviderOpenshiftServiceCA,
 		features.FeatureGateNewOLMCatalogdAPIV1Metas,
 		features.FeatureGateNewOLMBoxCutterRuntime,
@@ -57,12 +56,6 @@ func TestMapper_UpstreamForDownstream(t *testing.T) {
 		enabled        bool
 		expectFunc     bool
 	}{
-		{
-			name:           "valid downstream gate - own single namespace",
-			downstreamGate: features.FeatureGateNewOLMOwnSingleNamespace,
-			enabled:        true,
-			expectFunc:     true,
-		},
 		{
 			name:           "valid downstream gate - boxcutter runtime",
 			downstreamGate: features.FeatureGateNewOLMBoxCutterRuntime,
@@ -115,34 +108,6 @@ func TestMapper_FeatureGateMappings(t *testing.T) {
 		enabled        bool
 		expectedValues map[string]interface{}
 	}{
-		{
-			name:           "OwnSingleNamespace enabled",
-			downstreamGate: features.FeatureGateNewOLMOwnSingleNamespace,
-			enabled:        true,
-			expectedValues: map[string]interface{}{
-				"options": map[string]interface{}{
-					"operatorController": map[string]interface{}{
-						"features": map[string]interface{}{
-							"enabled": []interface{}{SingleOwnNamespaceInstallSupport},
-						},
-					},
-				},
-			},
-		},
-		{
-			name:           "OwnSingleNamespace disabled",
-			downstreamGate: features.FeatureGateNewOLMOwnSingleNamespace,
-			enabled:        false,
-			expectedValues: map[string]interface{}{
-				"options": map[string]interface{}{
-					"operatorController": map[string]interface{}{
-						"features": map[string]interface{}{
-							"disabled": []interface{}{SingleOwnNamespaceInstallSupport},
-						},
-					},
-				},
-			},
-		},
 		{
 			name:           "WebhookProviderOpenshiftServiceCA enabled",
 			downstreamGate: features.FeatureGateNewOLMWebhookProviderOpenshiftServiceCA,
@@ -272,7 +237,6 @@ func TestMapper_FeatureGateValidation(t *testing.T) {
 	t.Run("validates constants are not empty", func(t *testing.T) {
 		constants := []string{
 			APIV1MetasHandler,
-			SingleOwnNamespaceInstallSupport,
 			WebhookProviderOpenshiftServiceCA,
 			WebhookProviderCertManager,
 			DeploymentConfig,
@@ -289,7 +253,7 @@ func TestMapper_FeatureGateValidation(t *testing.T) {
 func TestMapper_Constants(t *testing.T) {
 	expectedConstants := map[string]string{
 		"APIV1MetasHandler":                 APIV1MetasHandler,
-		"SingleOwnNamespaceInstallSupport":  SingleOwnNamespaceInstallSupport,
+		"DeploymentConfig":                  DeploymentConfig,
 		"WebhookProviderOpenshiftServiceCA": WebhookProviderOpenshiftServiceCA,
 		"WebhookProviderCertManager":        WebhookProviderCertManager,
 	}
@@ -314,13 +278,13 @@ func TestEnableFeature(t *testing.T) {
 			name:        "enable feature in empty values",
 			addList:     helmvalues.EnableOperatorController,
 			removeList:  helmvalues.DisableOperatorController,
-			feature:     SingleOwnNamespaceInstallSupport,
+			feature:     DeploymentConfig,
 			initialVals: make(map[string]interface{}),
 			expectedVals: map[string]interface{}{
 				"options": map[string]interface{}{
 					"operatorController": map[string]interface{}{
 						"features": map[string]interface{}{
-							"enabled": []interface{}{SingleOwnNamespaceInstallSupport},
+							"enabled": []interface{}{DeploymentConfig},
 						},
 					},
 				},
@@ -330,12 +294,12 @@ func TestEnableFeature(t *testing.T) {
 			name:       "enable feature and remove from disabled list",
 			addList:    helmvalues.EnableOperatorController,
 			removeList: helmvalues.DisableOperatorController,
-			feature:    SingleOwnNamespaceInstallSupport,
+			feature:    DeploymentConfig,
 			initialVals: map[string]interface{}{
 				"options": map[string]interface{}{
 					"operatorController": map[string]interface{}{
 						"features": map[string]interface{}{
-							"disabled": []interface{}{SingleOwnNamespaceInstallSupport},
+							"disabled": []interface{}{DeploymentConfig},
 						},
 					},
 				},
@@ -345,7 +309,7 @@ func TestEnableFeature(t *testing.T) {
 					"operatorController": map[string]interface{}{
 						"features": map[string]interface{}{
 							"disabled": []interface{}{},
-							"enabled":  []interface{}{SingleOwnNamespaceInstallSupport},
+							"enabled":  []interface{}{DeploymentConfig},
 						},
 					},
 				},
@@ -410,13 +374,13 @@ func TestEnableOperatorControllerFeature(t *testing.T) {
 		{
 			name:        "enable feature",
 			enabled:     true,
-			feature:     SingleOwnNamespaceInstallSupport,
+			feature:     DeploymentConfig,
 			initialVals: make(map[string]interface{}),
 			expectedVals: map[string]interface{}{
 				"options": map[string]interface{}{
 					"operatorController": map[string]interface{}{
 						"features": map[string]interface{}{
-							"enabled": []interface{}{SingleOwnNamespaceInstallSupport},
+							"enabled": []interface{}{DeploymentConfig},
 						},
 					},
 				},
@@ -425,13 +389,13 @@ func TestEnableOperatorControllerFeature(t *testing.T) {
 		{
 			name:        "disable feature",
 			enabled:     false,
-			feature:     SingleOwnNamespaceInstallSupport,
+			feature:     DeploymentConfig,
 			initialVals: make(map[string]interface{}),
 			expectedVals: map[string]interface{}{
 				"options": map[string]interface{}{
 					"operatorController": map[string]interface{}{
 						"features": map[string]interface{}{
-							"disabled": []interface{}{SingleOwnNamespaceInstallSupport},
+							"disabled": []interface{}{DeploymentConfig},
 						},
 					},
 				},
@@ -440,12 +404,12 @@ func TestEnableOperatorControllerFeature(t *testing.T) {
 		{
 			name:    "enable feature removes from disabled",
 			enabled: true,
-			feature: SingleOwnNamespaceInstallSupport,
+			feature: DeploymentConfig,
 			initialVals: map[string]interface{}{
 				"options": map[string]interface{}{
 					"operatorController": map[string]interface{}{
 						"features": map[string]interface{}{
-							"disabled": []interface{}{SingleOwnNamespaceInstallSupport},
+							"disabled": []interface{}{DeploymentConfig},
 						},
 					},
 				},
@@ -455,7 +419,7 @@ func TestEnableOperatorControllerFeature(t *testing.T) {
 					"operatorController": map[string]interface{}{
 						"features": map[string]interface{}{
 							"disabled": []interface{}{},
-							"enabled":  []interface{}{SingleOwnNamespaceInstallSupport},
+							"enabled":  []interface{}{DeploymentConfig},
 						},
 					},
 				},
@@ -464,12 +428,12 @@ func TestEnableOperatorControllerFeature(t *testing.T) {
 		{
 			name:    "disable feature removes from enabled",
 			enabled: false,
-			feature: SingleOwnNamespaceInstallSupport,
+			feature: DeploymentConfig,
 			initialVals: map[string]interface{}{
 				"options": map[string]interface{}{
 					"operatorController": map[string]interface{}{
 						"features": map[string]interface{}{
-							"enabled": []interface{}{SingleOwnNamespaceInstallSupport},
+							"enabled": []interface{}{DeploymentConfig},
 						},
 					},
 				},
@@ -479,7 +443,7 @@ func TestEnableOperatorControllerFeature(t *testing.T) {
 					"operatorController": map[string]interface{}{
 						"features": map[string]interface{}{
 							"enabled":  []interface{}{},
-							"disabled": []interface{}{SingleOwnNamespaceInstallSupport},
+							"disabled": []interface{}{DeploymentConfig},
 						},
 					},
 				},
