@@ -566,7 +566,11 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 			if newMinTLS == "" {
 				return // observer hasn't stored a TLS profile yet
 			}
-			if newMinTLS == initialTLSServingInfo.MinTLSVersion &&
+			// A failed pre-run FeatureGate read configures metrics without curves.
+			// Once runOperator obtains the gate, rewrite that stale file even if
+			// the observed TLS values already match its serving configuration.
+			if (startupFeatureGate != nil || metricsConfigFile == "") &&
+				newMinTLS == initialTLSServingInfo.MinTLSVersion &&
 				reflect.DeepEqual(newCiphers, initialTLSServingInfo.CipherSuites) &&
 				reflect.DeepEqual(newCurvePreferences, initialTLSServingInfo.CurvePreferences) {
 				return // unchanged
