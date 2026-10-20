@@ -106,12 +106,13 @@ func newStartCommand() *cobra.Command {
 	// controllercmd's WithRestartOnChange. It is shared with runOperator via the closure
 	// so that the TLS change handler can update it and trigger a graceful restart.
 	var metricsConfigFile string
+	var startupFeatureGate *configv1.FeatureGate
 
 	cmd := controllercmd.NewControllerCommandConfig(
 		"cluster-olm-operator",
 		version.Get(),
 		func(ctx context.Context, cc *controllercmd.ControllerContext) error {
-			return runOperator(ctx, cc, metricsConfigFile)
+			return runOperator(ctx, cc, metricsConfigFile, startupFeatureGate)
 		},
 		clock.RealClock{},
 	).NewCommandWithContext(context.Background())
@@ -134,12 +135,17 @@ func newStartCommand() *cobra.Command {
 			klog.Warningf("Skipping metrics server TLS pre-configuration (config client error): %v", err)
 			return nil
 		}
-		featureGate, err := cfgClient.ConfigV1().FeatureGates().Get(context.Background(), "cluster", metav1.GetOptions{})
+		ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
+		defer cancel()
+
+		featureGate, err := cfgClient.ConfigV1().FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
 		if err != nil {
-			klog.Warningf("Skipping TLS group preferences for metrics server (unable to read FeatureGate): %v", err)
+			klog.Warning("Skipping TLS group preferences for metrics server: unable to read FeatureGate")
+		} else {
+			startupFeatureGate = featureGate.DeepCopy()
 		}
 		tlsGroupPreferencesEnabled := err == nil && controller.FeatureGatesFromStatus(featureGate).Enabled(features.FeatureGateTLSGroupPreferences)
-		servingInfo, err := controller.GetMetricsServerTLSServingInfo(context.Background(), cfgClient, tlsGroupPreferencesEnabled)
+		servingInfo, err := controller.GetMetricsServerTLSServingInfo(ctx, cfgClient, tlsGroupPreferencesEnabled)
 		if err != nil || servingInfo.MinTLSVersion == "" {
 			klog.Warningf("Skipping metrics server TLS pre-configuration: %v", err)
 			return nil
@@ -353,7 +359,7 @@ func objectControllerRendered(relatedObjects []configv1.ObjectReference) bool {
 	return false
 }
 
-func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metricsConfigFile string) error {
+func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metricsConfigFile string, startupFeatureGate *configv1.FeatureGate) error {
 	cl, err := clients.New(cc)
 	if err != nil {
 		return err
@@ -361,9 +367,12 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 
 	log := klog.FromContext(ctx)
 
-	fg, err := cl.ConfigClient.ConfigV1().FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("unable to retrieve featureSet: %w", err)
+	fg := startupFeatureGate
+	if fg == nil {
+		fg, err = cl.ConfigClient.ConfigV1().FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("unable to retrieve featureSet: %w", err)
+		}
 	}
 
 	infra, err := cl.ConfigClient.ConfigV1().Infrastructures().Get(ctx, "cluster", metav1.GetOptions{})

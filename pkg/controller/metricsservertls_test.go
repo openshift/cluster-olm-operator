@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"crypto/fips140"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -109,6 +110,10 @@ func TestTLSSettingsFromProfile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			expectedCurves := tt.wantCurvePreferences
+			if fips140.Enabled() && expectedCurves != nil {
+				expectedCurves = []int32{int32(tls.CurveP256)}
+			}
 			minTLS, ciphers, curves := tlsSettingsFromProfile(tt.profile, true)
 			if minTLS != tt.wantMinTLSVersion {
 				t.Errorf("minTLSVersion = %q, want %q", minTLS, tt.wantMinTLSVersion)
@@ -116,8 +121,8 @@ func TestTLSSettingsFromProfile(t *testing.T) {
 			if tt.wantCipherSuitesDep && len(ciphers) == 0 {
 				t.Error("expected non-empty cipherSuites")
 			}
-			if tt.wantCurvePreferences != nil && !slices.Equal(curves, tt.wantCurvePreferences) {
-				t.Errorf("curvePreferences = %v, want %v", curves, tt.wantCurvePreferences)
+			if expectedCurves != nil && !slices.Equal(curves, expectedCurves) {
+				t.Errorf("curvePreferences = %v, want %v", curves, expectedCurves)
 			}
 		})
 	}
