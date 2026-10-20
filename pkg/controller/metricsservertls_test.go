@@ -252,7 +252,8 @@ func TestTLSGroupPreferencesDisabled(t *testing.T) {
 		}},
 	}
 	minTLS, ciphers, curves := tlsSettingsFromProfile(profile, false)
-	if minTLS != string(configv1.VersionTLS12) || len(ciphers) != 1 {
+	wantProfileCiphers := []string{"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"}
+	if minTLS != string(configv1.VersionTLS12) || !slices.Equal(ciphers, wantProfileCiphers) {
 		t.Errorf("tlsSettingsFromProfile() = (%q, %v, %v), want version/ciphers with nil curves", minTLS, ciphers, curves)
 	}
 	if curves != nil {
@@ -263,7 +264,8 @@ func TestTLSGroupPreferencesDisabled(t *testing.T) {
 		ObservedConfig: runtime.RawExtension{Raw: []byte(`{"olmTLSSecurityProfile":{"minTLSVersion":"VersionTLS12","cipherSuites":["TLS_AES_128_GCM_SHA256"],"curvePreferences":["X25519"]}}`)},
 	}
 	minTLS, ciphers, curves = TLSProfileFromObservedConfig(operatorSpec, false)
-	if minTLS != "VersionTLS12" || len(ciphers) != 1 || curves != nil {
+	wantObservedCiphers := []string{"TLS_AES_128_GCM_SHA256"}
+	if minTLS != "VersionTLS12" || !slices.Equal(ciphers, wantObservedCiphers) || curves != nil {
 		t.Errorf("TLSProfileFromObservedConfig() = (%q, %v, %v), want version/ciphers with nil curves", minTLS, ciphers, curves)
 	}
 }
