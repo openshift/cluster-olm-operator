@@ -198,7 +198,7 @@ func TestUpdateDeploymentObservedConfigHook(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Call the hook function directly using the extractTLSConfigFromObservedConfig function
-			args, err := extractTLSConfigFromObservedConfig(tt.operatorSpec)
+			args, err := extractTLSConfigFromObservedConfig(tt.operatorSpec, true)
 			if tt.expectError && err == nil {
 				t.Fatal("expected error but got none")
 			}
@@ -220,6 +220,27 @@ func TestUpdateDeploymentObservedConfigHook(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestExtractTLSConfigFromObservedConfig_TLSGroupPreferencesDisabled(t *testing.T) {
+	operatorSpec := &operatorv1.OperatorSpec{
+		ObservedConfig: runtime.RawExtension{Raw: []byte(`{
+			"olmTLSSecurityProfile": {
+				"minTLSVersion": "VersionTLS12",
+				"cipherSuites": ["TLS_AES_128_GCM_SHA256"],
+				"curvePreferences": ["X25519", "secp256r1"]
+			}
+		}`)},
+	}
+	args, err := extractTLSConfigFromObservedConfig(operatorSpec, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "--tls-custom-curves=") {
+			t.Fatalf("unexpected curves argument when TLSGroupPreferences is disabled: %q", arg)
+		}
 	}
 }
 
@@ -259,7 +280,7 @@ func TestExtractTLSConfigFromObservedConfig(t *testing.T) {
 				},
 			}
 
-			args, err := extractTLSConfigFromObservedConfig(operatorSpec)
+			args, err := extractTLSConfigFromObservedConfig(operatorSpec, true)
 			if tt.expectError && err == nil {
 				t.Fatal("expected error but got none")
 			}

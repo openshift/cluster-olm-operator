@@ -10,6 +10,7 @@ import (
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
 	"github.com/openshift/cluster-olm-operator/internal/versionutils"
 
 	_ "github.com/openshift/api/operator/v1/zz_generated.crd-manifests"
@@ -133,7 +134,12 @@ func newStartCommand() *cobra.Command {
 			klog.Warningf("Skipping metrics server TLS pre-configuration (config client error): %v", err)
 			return nil
 		}
-		servingInfo, err := controller.GetMetricsServerTLSServingInfo(context.Background(), cfgClient)
+		featureGate, err := cfgClient.ConfigV1().FeatureGates().Get(context.Background(), "cluster", metav1.GetOptions{})
+		if err != nil {
+			klog.Warningf("Skipping TLS group preferences for metrics server (unable to read FeatureGate): %v", err)
+		}
+		tlsGroupPreferencesEnabled := err == nil && controller.FeatureGatesFromStatus(featureGate).Enabled(features.FeatureGateTLSGroupPreferences)
+		servingInfo, err := controller.GetMetricsServerTLSServingInfo(context.Background(), cfgClient, tlsGroupPreferencesEnabled)
 		if err != nil || servingInfo.MinTLSVersion == "" {
 			klog.Warningf("Skipping metrics server TLS pre-configuration: %v", err)
 			return nil
@@ -380,6 +386,11 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 		FeatureGate:    *fg,
 		Infrastructure: infra,
 	}
+	currentFeatureGates, err := cb.CurrentFeatureGates()
+	if err != nil {
+		return fmt.Errorf("unable to retrieve current featureSet: %w", err)
+	}
+	cb.ClusterFeatureGates = currentFeatureGates
 
 	staticResourceControllers, deploymentControllers, clusterCatalogControllers, relatedObjects, err := cb.BuildControllers("catalogd", "operator-controller")
 	if err != nil {
@@ -426,11 +437,6 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 		controllerNames,
 	)
 
-	currentFeatureGates, err := cb.CurrentFeatureGates()
-	if err != nil {
-		return fmt.Errorf("unable to retrieve current featureSet: %w", err)
-	}
-
 	incompatibleOperatorController := controller.NewIncompatibleOperatorController(
 		"OLMIncompatibleOperatorController",
 		currentOCPMinorVersion,
@@ -459,6 +465,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 		"OLMTLSSecurityProfileObserver",
 		cl.OperatorClient,
 		cl.ConfigInformerFactory,
+		currentFeatureGates,
 		cc.EventRecorder.ForComponent("OLMTLSSecurityProfileObserver"),
 	)
 
@@ -534,7 +541,8 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 	// Rather than calling os.Exit directly we update the config file that controllercmd's
 	// WithRestartOnChange is already watching — it detects the content change and performs
 	// a graceful restart for us.
-	initialTLSServingInfo, err := controller.GetMetricsServerTLSServingInfo(ctx, cl.ConfigClient)
+	tlsGroupPreferencesEnabled := currentFeatureGates.Enabled(features.FeatureGateTLSGroupPreferences)
+	initialTLSServingInfo, err := controller.GetMetricsServerTLSServingInfo(ctx, cl.ConfigClient, tlsGroupPreferencesEnabled)
 	if err != nil {
 		return fmt.Errorf("unable to retrieve initial TLS profile for metrics server: %w", err)
 	}
@@ -545,7 +553,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 				log.V(4).Info("Failed to get operator state in TLS change handler", "error", err)
 				return
 			}
-			newMinTLS, newCiphers, newCurvePreferences := controller.TLSProfileFromObservedConfig(operatorSpec)
+			newMinTLS, newCiphers, newCurvePreferences := controller.TLSProfileFromObservedConfig(operatorSpec, tlsGroupPreferencesEnabled)
 			if newMinTLS == "" {
 				return // observer hasn't stored a TLS profile yet
 			}

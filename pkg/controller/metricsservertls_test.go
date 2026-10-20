@@ -109,7 +109,7 @@ func TestTLSSettingsFromProfile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			minTLS, ciphers, curves := tlsSettingsFromProfile(tt.profile)
+			minTLS, ciphers, curves := tlsSettingsFromProfile(tt.profile, true)
 			if minTLS != tt.wantMinTLSVersion {
 				t.Errorf("minTLSVersion = %q, want %q", minTLS, tt.wantMinTLSVersion)
 			}
@@ -127,7 +127,7 @@ func TestGetMetricsServerTLSServingInfo_NotFound(t *testing.T) {
 	client := &fakeAPIServerGetter{
 		err: apierrors.NewNotFound(schema.GroupResource{Resource: "apiservers"}, "cluster"),
 	}
-	info, err := GetMetricsServerTLSServingInfo(context.Background(), client)
+	info, err := GetMetricsServerTLSServingInfo(context.Background(), client, true)
 	if err != nil {
 		t.Fatalf("expected no error for NotFound, got: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestGetMetricsServerTLSServingInfo_NotFound(t *testing.T) {
 
 func TestGetMetricsServerTLSServingInfo_Error(t *testing.T) {
 	client := &fakeAPIServerGetter{err: errors.New("connection refused")}
-	_, err := GetMetricsServerTLSServingInfo(context.Background(), client)
+	_, err := GetMetricsServerTLSServingInfo(context.Background(), client, true)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -154,7 +154,7 @@ func TestGetMetricsServerTLSServingInfo_IntermediateProfile(t *testing.T) {
 			},
 		},
 	}
-	info, err := GetMetricsServerTLSServingInfo(context.Background(), client)
+	info, err := GetMetricsServerTLSServingInfo(context.Background(), client, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestTLSProfileFromObservedConfig(t *testing.T) {
 		ObservedConfig: runtime.RawExtension{Raw: []byte(`{"olmTLSSecurityProfile":{"minTLSVersion":"VersionTLS12","cipherSuites":["TLS_AES_128_GCM_SHA256"],"curvePreferences":["X25519","secp256r1"]}}`)},
 	}
 
-	minTLS, ciphers, curves := TLSProfileFromObservedConfig(operatorSpec)
+	minTLS, ciphers, curves := TLSProfileFromObservedConfig(operatorSpec, true)
 	if minTLS != "VersionTLS12" {
 		t.Errorf("MinTLSVersion = %q, want VersionTLS12", minTLS)
 	}
@@ -231,8 +231,45 @@ func TestTLSProfileFromObservedConfig_MalformedCurvePreferences(t *testing.T) {
 		ObservedConfig: runtime.RawExtension{Raw: []byte(`{"olmTLSSecurityProfile":{"minTLSVersion":"VersionTLS12","cipherSuites":["TLS_AES_128_GCM_SHA256"],"curvePreferences":"X25519"}}`)},
 	}
 
-	minTLS, ciphers, curves := TLSProfileFromObservedConfig(operatorSpec)
+	minTLS, ciphers, curves := TLSProfileFromObservedConfig(operatorSpec, true)
 	if minTLS != "" || ciphers != nil || curves != nil {
 		t.Errorf("TLSProfileFromObservedConfig() = (%q, %v, %v), want empty settings", minTLS, ciphers, curves)
+	}
+}
+
+func TestTLSGroupPreferencesDisabled(t *testing.T) {
+	profile := &configv1.TLSSecurityProfile{
+		Type: configv1.TLSProfileCustomType,
+		Custom: &configv1.CustomTLSProfile{TLSProfileSpec: configv1.TLSProfileSpec{
+			MinTLSVersion: configv1.VersionTLS12,
+			Ciphers:       []string{"ECDHE-ECDSA-AES256-GCM-SHA384"},
+			Groups:        []configv1.TLSGroup{configv1.TLSGroupX25519},
+		}},
+	}
+	_, _, curves := tlsSettingsFromProfile(profile, false)
+	if curves != nil {
+		t.Errorf("curvePreferences = %v, want nil when TLSGroupPreferences is disabled", curves)
+	}
+
+	operatorSpec := &operatorv1.OperatorSpec{
+		ObservedConfig: runtime.RawExtension{Raw: []byte(`{"olmTLSSecurityProfile":{"minTLSVersion":"VersionTLS12","cipherSuites":["TLS_AES_128_GCM_SHA256"],"curvePreferences":["X25519"]}}`)},
+	}
+	minTLS, ciphers, curves := TLSProfileFromObservedConfig(operatorSpec, false)
+	if minTLS != "VersionTLS12" || len(ciphers) != 1 || curves != nil {
+		t.Errorf("TLSProfileFromObservedConfig() = (%q, %v, %v), want version/ciphers with nil curves", minTLS, ciphers, curves)
+	}
+}
+
+func TestFIPSApprovedTLSGroups(t *testing.T) {
+	groups := []configv1.TLSGroup{
+		configv1.TLSGroupX25519MLKEM768,
+		configv1.TLSGroupX25519,
+		configv1.TLSGroupSecP256r1,
+		configv1.TLSGroupSecP384r1,
+	}
+	got := fipsApprovedTLSGroups(groups, true)
+	want := []configv1.TLSGroup{configv1.TLSGroupSecP256r1, configv1.TLSGroupSecP384r1}
+	if !slices.Equal(got, want) {
+		t.Errorf("fipsApprovedTLSGroups() = %v, want %v", got, want)
 	}
 }

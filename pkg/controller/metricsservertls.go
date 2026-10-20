@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"crypto/fips140"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -18,10 +19,10 @@ import (
 )
 
 // GetMetricsServerTLSServingInfo reads the cluster TLS security profile from the APIServer
-// config and returns a configv1.HTTPServingInfo populated with MinTLSVersion,
-// CipherSuites, and CurvePreferences.
+// config and returns a configv1.HTTPServingInfo populated with MinTLSVersion and
+// CipherSuites. CurvePreferences are included only when TLSGroupPreferences is enabled.
 // Returns an empty HTTPServingInfo (with no error) if the APIServer resource is not found.
-func GetMetricsServerTLSServingInfo(ctx context.Context, configClient configclient.Interface) (configv1.HTTPServingInfo, error) {
+func GetMetricsServerTLSServingInfo(ctx context.Context, configClient configclient.Interface, tlsGroupPreferencesEnabled bool) (configv1.HTTPServingInfo, error) {
 	apiServer, err := configClient.ConfigV1().APIServers().Get(ctx, "cluster", metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		return configv1.HTTPServingInfo{}, nil
@@ -30,7 +31,7 @@ func GetMetricsServerTLSServingInfo(ctx context.Context, configClient configclie
 		return configv1.HTTPServingInfo{}, fmt.Errorf("error reading APIServer config: %w", err)
 	}
 
-	minTLSVersion, cipherSuites, curvePreferences := tlsSettingsFromProfile(apiServer.Spec.TLSSecurityProfile)
+	minTLSVersion, cipherSuites, curvePreferences := tlsSettingsFromProfile(apiServer.Spec.TLSSecurityProfile, tlsGroupPreferencesEnabled)
 	return configv1.HTTPServingInfo{
 		ServingInfo: configv1.ServingInfo{
 			MinTLSVersion:    minTLSVersion,
@@ -44,7 +45,7 @@ func GetMetricsServerTLSServingInfo(ctx context.Context, configClient configclie
 // and Go CurveIDs from a TLSSecurityProfile. It mirrors library-go's TLS profile
 // resolution while converting API TLSGroup values to the form used by the metrics
 // server's SecureServingOptions.
-func tlsSettingsFromProfile(profile *configv1.TLSSecurityProfile) (string, []string, []int32) {
+func tlsSettingsFromProfile(profile *configv1.TLSSecurityProfile, tlsGroupPreferencesEnabled bool) (string, []string, []int32) {
 	profileType := crypto.DefaultTLSProfileType
 	if profile != nil {
 		profileType = profile.Type
@@ -63,14 +64,36 @@ func tlsSettingsFromProfile(profile *configv1.TLSSecurityProfile) (string, []str
 		profileSpec = configv1.TLSProfiles[crypto.DefaultTLSProfileType]
 	}
 
-	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers), curvePreferencesFromTLSGroups(profileSpec.Groups)
+	var curvePreferences []int32
+	if tlsGroupPreferencesEnabled {
+		curvePreferences = curvePreferencesFromTLSGroups(fipsApprovedTLSGroups(profileSpec.Groups, fips140.Enabled()))
+	}
+	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers), curvePreferences
+}
+
+// fipsApprovedTLSGroups matches library-go's FIPS filter used by
+// ObserveTLSSecurityProfileWithGroupPaths. The direct APIServer read used to
+// configure the metrics server must produce the same effective curves as the
+// observer; otherwise its config file is rewritten on every startup.
+func fipsApprovedTLSGroups(groups []configv1.TLSGroup, fipsEnabled bool) []configv1.TLSGroup {
+	if !fipsEnabled {
+		return groups
+	}
+	approved := make([]configv1.TLSGroup, 0, len(groups))
+	for _, group := range groups {
+		switch group {
+		case configv1.TLSGroupSecP256r1, configv1.TLSGroupSecP384r1, configv1.TLSGroupSecP521r1:
+			approved = append(approved, group)
+		}
+	}
+	return approved
 }
 
 // TLSProfileFromObservedConfig extracts the TLS settings stored in the operator's
 // observedConfig at the olmTLSSecurityProfile paths. Curve preference names are
 // converted to the numeric Go CurveIDs used by the metrics server. It returns empty
 // values if the observedConfig is absent or unparseable.
-func TLSProfileFromObservedConfig(operatorSpec *operatorv1.OperatorSpec) (string, []string, []int32) {
+func TLSProfileFromObservedConfig(operatorSpec *operatorv1.OperatorSpec, tlsGroupPreferencesEnabled bool) (string, []string, []int32) {
 	if operatorSpec == nil || len(operatorSpec.ObservedConfig.Raw) == 0 {
 		return "", nil, nil
 	}
@@ -85,6 +108,9 @@ func TLSProfileFromObservedConfig(operatorSpec *operatorv1.OperatorSpec) (string
 	ciphers, _, err := unstructured.NestedStringSlice(cfg, TLSCipherSuitesPath()...)
 	if err != nil {
 		return "", nil, nil
+	}
+	if !tlsGroupPreferencesEnabled {
+		return minTLS, ciphers, nil
 	}
 	groups, _, err := unstructured.NestedStringSlice(cfg, TLSCurvePreferencesPath()...)
 	if err != nil {
