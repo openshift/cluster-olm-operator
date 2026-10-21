@@ -106,7 +106,7 @@ func newStartCommand() *cobra.Command {
 	// controllercmd's WithRestartOnChange. It is shared with runOperator via the closure
 	// so that the TLS change handler can update it and trigger a graceful restart.
 	var metricsConfigFile string
-	var startupFeatureGate *configv1.FeatureGate
+	var startupFeatureGate configv1.FeatureGate
 
 	cmd := controllercmd.NewControllerCommandConfig(
 		"cluster-olm-operator",
@@ -119,32 +119,31 @@ func newStartCommand() *cobra.Command {
 	cmd.Use = "start"
 	cmd.Short = "Start the Cluster OLM Operator"
 
-	// Pre-configure the metrics server TLS from the cluster APIServer TLS profile before
-	// controllercmd starts the server. This runs only when --config is not already provided.
+	// Read the cluster FeatureGate before controllercmd starts the server so the metrics
+	// configuration and runOperator use the same feature-gate snapshot. When --config is
+	// not provided, also pre-configure metrics TLS from the APIServer profile.
 	cmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
-		if cmd.Flags().Changed("config") {
-			return nil
-		}
 		kubeConfig, err := libgoclient.GetKubeConfigOrInClusterConfig("", nil)
 		if err != nil {
-			klog.Warningf("Skipping metrics server TLS pre-configuration (no in-cluster config): %v", err)
-			return nil
+			return errors.New("unable to load configuration for startup FeatureGate")
 		}
 		cfgClient, err := configclient.NewForConfig(kubeConfig)
 		if err != nil {
-			klog.Warningf("Skipping metrics server TLS pre-configuration (config client error): %v", err)
-			return nil
+			return errors.New("unable to create config client for startup FeatureGate")
 		}
 		ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 		defer cancel()
 
 		featureGate, err := cfgClient.ConfigV1().FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
 		if err != nil {
-			klog.Warning("Skipping TLS group preferences for metrics server: unable to read FeatureGate")
-		} else {
-			startupFeatureGate = featureGate.DeepCopy()
+			return errors.New("unable to retrieve startup FeatureGate")
 		}
-		tlsGroupPreferencesEnabled := err == nil && controller.FeatureGatesFromStatus(featureGate).Enabled(features.FeatureGateTLSGroupPreferences)
+		startupFeatureGate = *featureGate.DeepCopy()
+
+		if cmd.Flags().Changed("config") {
+			return nil
+		}
+		tlsGroupPreferencesEnabled := controller.FeatureGatesFromStatus(featureGate).Enabled(features.FeatureGateTLSGroupPreferences)
 		servingInfo, err := controller.GetMetricsServerTLSServingInfo(ctx, cfgClient, tlsGroupPreferencesEnabled)
 		if err != nil || servingInfo.MinTLSVersion == "" {
 			klog.Warningf("Skipping metrics server TLS pre-configuration: %v", err)
@@ -359,21 +358,13 @@ func objectControllerRendered(relatedObjects []configv1.ObjectReference) bool {
 	return false
 }
 
-func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metricsConfigFile string, startupFeatureGate *configv1.FeatureGate) error {
+func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metricsConfigFile string, startupFeatureGate configv1.FeatureGate) error {
 	cl, err := clients.New(cc)
 	if err != nil {
 		return err
 	}
 
 	log := klog.FromContext(ctx)
-
-	fg := startupFeatureGate
-	if fg == nil {
-		fg, err = cl.ConfigClient.ConfigV1().FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
-		if err != nil {
-			return fmt.Errorf("unable to retrieve featureSet: %w", err)
-		}
-	}
 
 	infra, err := cl.ConfigClient.ConfigV1().Infrastructures().Get(ctx, "cluster", metav1.GetOptions{})
 	if err != nil {
@@ -392,7 +383,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 				Scope:            meta.RESTScopeRoot,
 			},
 		},
-		FeatureGate:    *fg,
+		FeatureGate:    startupFeatureGate,
 		Infrastructure: infra,
 	}
 	currentFeatureGates, err := cb.CurrentFeatureGates()
@@ -566,11 +557,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 			if newMinTLS == "" {
 				return // observer hasn't stored a TLS profile yet
 			}
-			// A failed pre-run FeatureGate read configures metrics without curves.
-			// Once runOperator obtains the gate, rewrite that stale file even if
-			// the observed TLS values already match its serving configuration.
-			if (startupFeatureGate != nil || metricsConfigFile == "") &&
-				newMinTLS == initialTLSServingInfo.MinTLSVersion &&
+			if newMinTLS == initialTLSServingInfo.MinTLSVersion &&
 				reflect.DeepEqual(newCiphers, initialTLSServingInfo.CipherSuites) &&
 				reflect.DeepEqual(newCurvePreferences, initialTLSServingInfo.CurvePreferences) {
 				return // unchanged
