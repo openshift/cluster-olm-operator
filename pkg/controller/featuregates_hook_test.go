@@ -68,17 +68,17 @@ func TestUpstreamFeatureGates(t *testing.T) {
 		{
 			name: "single enabled feature gate",
 			clusterGatesConfig: newMockFeatureGate(
-				[]configv1.FeatureGateName{features.FeatureGateNewOLMOwnSingleNamespace},
+				[]configv1.FeatureGateName{features.FeatureGateNewOLMConfigAPI},
 				[]configv1.FeatureGateName{},
 			),
-			downstreamGates: []configv1.FeatureGateName{features.FeatureGateNewOLMOwnSingleNamespace},
+			downstreamGates: []configv1.FeatureGateName{features.FeatureGateNewOLMConfigAPI},
 			downstreamToUpstreamFunc: func(gate configv1.FeatureGateName) func(*helmvalues.HelmValues, bool) error {
-				if gate == features.FeatureGateNewOLMOwnSingleNamespace {
+				if gate == features.FeatureGateNewOLMConfigAPI {
 					return func(hv *helmvalues.HelmValues, enabled bool) error {
 						if enabled {
-							return hv.AddListValue("options.operatorController.features.enabled", "SingleOwnNamespaceInstallSupport")
+							return hv.AddListValue("options.operatorController.features.enabled", "DeploymentConfig")
 						}
-						return hv.AddListValue("options.operatorController.features.disabled", "SingleOwnNamespaceInstallSupport")
+						return hv.AddListValue("options.operatorController.features.disabled", "DeploymentConfig")
 					}
 				}
 				return func(_ *helmvalues.HelmValues, _ bool) error {
@@ -89,7 +89,7 @@ func TestUpstreamFeatureGates(t *testing.T) {
 				"options": map[string]interface{}{
 					"operatorController": map[string]interface{}{
 						"features": map[string]interface{}{
-							"enabled": []interface{}{"SingleOwnNamespaceInstallSupport"},
+							"enabled": []interface{}{"DeploymentConfig"},
 						},
 					},
 				},
@@ -100,16 +100,16 @@ func TestUpstreamFeatureGates(t *testing.T) {
 			name: "single disabled feature gate",
 			clusterGatesConfig: newMockFeatureGate(
 				[]configv1.FeatureGateName{},
-				[]configv1.FeatureGateName{features.FeatureGateNewOLMOwnSingleNamespace},
+				[]configv1.FeatureGateName{features.FeatureGateNewOLMConfigAPI},
 			),
-			downstreamGates: []configv1.FeatureGateName{features.FeatureGateNewOLMOwnSingleNamespace},
+			downstreamGates: []configv1.FeatureGateName{features.FeatureGateNewOLMConfigAPI},
 			downstreamToUpstreamFunc: func(gate configv1.FeatureGateName) func(*helmvalues.HelmValues, bool) error {
-				if gate == features.FeatureGateNewOLMOwnSingleNamespace {
+				if gate == features.FeatureGateNewOLMConfigAPI {
 					return func(hv *helmvalues.HelmValues, enabled bool) error {
 						if enabled {
-							return hv.AddListValue("options.operatorController.features.enabled", "SingleOwnNamespaceInstallSupport")
+							return hv.AddListValue("options.operatorController.features.enabled", "DeploymentConfig")
 						}
-						return hv.AddListValue("options.operatorController.features.disabled", "SingleOwnNamespaceInstallSupport")
+						return hv.AddListValue("options.operatorController.features.disabled", "DeploymentConfig")
 					}
 				}
 				return func(_ *helmvalues.HelmValues, _ bool) error {
@@ -120,7 +120,7 @@ func TestUpstreamFeatureGates(t *testing.T) {
 				"options": map[string]interface{}{
 					"operatorController": map[string]interface{}{
 						"features": map[string]interface{}{
-							"disabled": []interface{}{"SingleOwnNamespaceInstallSupport"},
+							"disabled": []interface{}{"DeploymentConfig"},
 						},
 					},
 				},
@@ -131,7 +131,7 @@ func TestUpstreamFeatureGates(t *testing.T) {
 			name: "multiple feature gates mixed enabled/disabled",
 			clusterGatesConfig: newMockFeatureGate(
 				[]configv1.FeatureGateName{
-					features.FeatureGateNewOLMOwnSingleNamespace,
+					features.FeatureGateNewOLMConfigAPI,
 					features.FeatureGateNewOLMBoxCutterRuntime,
 				},
 				[]configv1.FeatureGateName{
@@ -139,18 +139,18 @@ func TestUpstreamFeatureGates(t *testing.T) {
 				},
 			),
 			downstreamGates: []configv1.FeatureGateName{
-				features.FeatureGateNewOLMOwnSingleNamespace,
+				features.FeatureGateNewOLMConfigAPI,
 				features.FeatureGateNewOLMBoxCutterRuntime,
 				features.FeatureGateNewOLMWebhookProviderOpenshiftServiceCA,
 			},
 			downstreamToUpstreamFunc: func(gate configv1.FeatureGateName) func(*helmvalues.HelmValues, bool) error {
 				switch gate {
-				case features.FeatureGateNewOLMOwnSingleNamespace:
+				case features.FeatureGateNewOLMConfigAPI:
 					return func(hv *helmvalues.HelmValues, enabled bool) error {
 						if enabled {
-							return hv.AddListValue("options.operatorController.features.enabled", "SingleOwnNamespaceInstallSupport")
+							return hv.AddListValue("options.operatorController.features.enabled", "DeploymentConfig")
 						}
-						return hv.AddListValue("options.operatorController.features.disabled", "SingleOwnNamespaceInstallSupport")
+						return hv.AddListValue("options.operatorController.features.disabled", "DeploymentConfig")
 					}
 				case features.FeatureGateNewOLMBoxCutterRuntime:
 					return func(hv *helmvalues.HelmValues, enabled bool) error {
@@ -175,7 +175,7 @@ func TestUpstreamFeatureGates(t *testing.T) {
 				"options": map[string]interface{}{
 					"operatorController": map[string]interface{}{
 						"features": map[string]interface{}{
-							"enabled":  []interface{}{"BoxcutterRuntime", "SingleOwnNamespaceInstallSupport"},
+							"enabled":  []interface{}{"BoxcutterRuntime", "DeploymentConfig"},
 							"disabled": []interface{}{"WebhookProviderOpenshiftServiceCA"},
 						},
 					},
@@ -186,10 +186,10 @@ func TestUpstreamFeatureGates(t *testing.T) {
 		{
 			name: "mapping function returns error",
 			clusterGatesConfig: newMockFeatureGate(
-				[]configv1.FeatureGateName{features.FeatureGateNewOLMOwnSingleNamespace},
+				[]configv1.FeatureGateName{features.FeatureGateNewOLMConfigAPI},
 				[]configv1.FeatureGateName{},
 			),
-			downstreamGates: []configv1.FeatureGateName{features.FeatureGateNewOLMOwnSingleNamespace},
+			downstreamGates: []configv1.FeatureGateName{features.FeatureGateNewOLMConfigAPI},
 			downstreamToUpstreamFunc: func(_ configv1.FeatureGateName) func(*helmvalues.HelmValues, bool) error {
 				return func(_ *helmvalues.HelmValues, _ bool) error {
 					return errors.New("mapping function error")
@@ -202,14 +202,14 @@ func TestUpstreamFeatureGates(t *testing.T) {
 			name: "multiple mapping function errors",
 			clusterGatesConfig: newMockFeatureGate(
 				[]configv1.FeatureGateName{
-					features.FeatureGateNewOLMOwnSingleNamespace,
-					features.FeatureGateNewOLMOwnSingleNamespace,
+					features.FeatureGateNewOLMConfigAPI,
+					features.FeatureGateNewOLMConfigAPI,
 				},
 				[]configv1.FeatureGateName{},
 			),
 			downstreamGates: []configv1.FeatureGateName{
-				features.FeatureGateNewOLMOwnSingleNamespace,
-				features.FeatureGateNewOLMOwnSingleNamespace,
+				features.FeatureGateNewOLMConfigAPI,
+				features.FeatureGateNewOLMConfigAPI,
 			},
 			downstreamToUpstreamFunc: func(gate configv1.FeatureGateName) func(*helmvalues.HelmValues, bool) error {
 				return func(_ *helmvalues.HelmValues, _ bool) error {
@@ -305,10 +305,10 @@ func TestUpstreamFeatureGates(t *testing.T) {
 func TestUpstreamFeatureGates_NilMappingFunction(t *testing.T) {
 	// Test case where the mapping function returns nil (no mapping for a gate)
 	clusterGatesConfig := newMockFeatureGate(
-		[]configv1.FeatureGateName{features.FeatureGateNewOLMOwnSingleNamespace},
+		[]configv1.FeatureGateName{features.FeatureGateNewOLMConfigAPI},
 		[]configv1.FeatureGateName{},
 	)
-	downstreamGates := []configv1.FeatureGateName{features.FeatureGateNewOLMOwnSingleNamespace}
+	downstreamGates := []configv1.FeatureGateName{features.FeatureGateNewOLMConfigAPI}
 
 	// This should panic when trying to call a nil function
 	defer func() {
@@ -331,7 +331,7 @@ func TestUpstreamFeatureGates_EdgeCases(t *testing.T) {
 			[]configv1.FeatureGateName{},
 			[]configv1.FeatureGateName{},
 		)
-		downstreamGates := []configv1.FeatureGateName{features.FeatureGateNewOLMOwnSingleNamespace}
+		downstreamGates := []configv1.FeatureGateName{features.FeatureGateNewOLMConfigAPI}
 
 		result, err := upstreamFeatureGates(
 			helmvalues.NewHelmValues(),
@@ -370,8 +370,8 @@ func TestUpstreamFeatureGates_EdgeCases(t *testing.T) {
 func TestMockFeatureGate(t *testing.T) {
 	// Test the mock implementation itself
 	enabled := []configv1.FeatureGateName{
-		features.FeatureGateNewOLMOwnSingleNamespace,
-		features.FeatureGateNewOLMOwnSingleNamespace,
+		features.FeatureGateNewOLMConfigAPI,
+		features.FeatureGateNewOLMConfigAPI,
 	}
 	disabled := []configv1.FeatureGateName{
 		features.FeatureGateNewOLMWebhookProviderOpenshiftServiceCA,
