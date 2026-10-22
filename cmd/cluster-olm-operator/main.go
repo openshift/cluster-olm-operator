@@ -6,7 +6,6 @@ import (
 	goflag "flag"
 	"fmt"
 	"os"
-	"reflect"
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -553,27 +552,16 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 				log.V(4).Info("Failed to get operator state in TLS change handler", "error", err)
 				return
 			}
-			newMinTLS, newCiphers, newCurvePreferences := controller.TLSProfileFromObservedConfig(operatorSpec, tlsGroupPreferencesEnabled)
-			if newMinTLS == "" {
-				return // observer hasn't stored a TLS profile yet
+			newServingInfo, updated, err := controller.UpdateMetricsServerConfigFromObservedTLS(metricsConfigFile, initialTLSServingInfo, operatorSpec, tlsGroupPreferencesEnabled)
+			if err != nil {
+				klog.Warningf("Failed to update metrics server TLS config file: %v", err)
+				return
 			}
-			if newMinTLS == initialTLSServingInfo.MinTLSVersion &&
-				reflect.DeepEqual(newCiphers, initialTLSServingInfo.CipherSuites) &&
-				reflect.DeepEqual(newCurvePreferences, initialTLSServingInfo.CurvePreferences) {
-				return // unchanged
+			if !updated {
+				return
 			}
 			log.Info("TLS security profile changed, updating metrics server config to trigger restart",
-				"old", initialTLSServingInfo.MinTLSVersion, "new", newMinTLS)
-			newServingInfo := configv1.HTTPServingInfo{
-				ServingInfo: configv1.ServingInfo{
-					MinTLSVersion:    newMinTLS,
-					CipherSuites:     newCiphers,
-					CurvePreferences: newCurvePreferences,
-				},
-			}
-			if err := controller.UpdateMetricsServerConfigFile(metricsConfigFile, newServingInfo); err != nil {
-				klog.Warningf("Failed to update metrics server TLS config file: %v", err)
-			}
+				"old", initialTLSServingInfo.MinTLSVersion, "new", newServingInfo.MinTLSVersion)
 		},
 	}); err != nil {
 		return fmt.Errorf("failed to add operator TLS change event handler: %w", err)

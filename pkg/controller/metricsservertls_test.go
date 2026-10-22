@@ -214,6 +214,66 @@ func TestWriteMetricsServerConfigFile(t *testing.T) {
 	}
 }
 
+func TestUpdateMetricsServerConfigFromObservedTLS(t *testing.T) {
+	initialServingInfo := configv1.HTTPServingInfo{
+		ServingInfo: configv1.ServingInfo{
+			MinTLSVersion:    "VersionTLS12",
+			CipherSuites:     []string{"TLS_AES_128_GCM_SHA256"},
+			CurvePreferences: []int32{int32(tls.X25519), int32(tls.CurveP256)},
+		},
+	}
+	path, err := WriteMetricsServerConfigFile(initialServingInfo)
+	if err != nil {
+		t.Fatalf("WriteMetricsServerConfigFile error: %v", err)
+	}
+	defer os.Remove(path)
+
+	unchangedSpec := &operatorv1.OperatorSpec{
+		ObservedConfig: runtime.RawExtension{Raw: []byte(`{"olmTLSSecurityProfile":{"minTLSVersion":"VersionTLS12","cipherSuites":["TLS_AES_128_GCM_SHA256"],"curvePreferences":["X25519","secp256r1"]}}`)},
+	}
+	if err := os.Chmod(path, 0400); err != nil {
+		t.Fatalf("chmod config file read-only: %v", err)
+	}
+	_, updated, err := UpdateMetricsServerConfigFromObservedTLS(path, initialServingInfo, unchangedSpec, true)
+	if err != nil {
+		t.Fatalf("unexpected error for unchanged TLS settings: %v", err)
+	}
+	if updated {
+		t.Fatal("expected unchanged TLS settings not to rewrite the metrics config file")
+	}
+
+	if err := os.Chmod(path, 0600); err != nil {
+		t.Fatalf("restore config file write permission: %v", err)
+	}
+	changedSpec := &operatorv1.OperatorSpec{
+		ObservedConfig: runtime.RawExtension{Raw: []byte(`{"olmTLSSecurityProfile":{"minTLSVersion":"VersionTLS13","cipherSuites":["TLS_AES_256_GCM_SHA384"],"curvePreferences":["secp384r1"]}}`)},
+	}
+	observedServingInfo, updated, err := UpdateMetricsServerConfigFromObservedTLS(path, initialServingInfo, changedSpec, true)
+	if err != nil {
+		t.Fatalf("unexpected error for changed TLS settings: %v", err)
+	}
+	if !updated {
+		t.Fatal("expected changed TLS settings to rewrite the metrics config file")
+	}
+	if observedServingInfo.MinTLSVersion != "VersionTLS13" {
+		t.Errorf("updated MinTLSVersion = %q, want VersionTLS13", observedServingInfo.MinTLSVersion)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read updated config file: %v", err)
+	}
+	var config operatorv1alpha1.GenericOperatorConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatalf("unmarshal updated config file: %v", err)
+	}
+	if config.ServingInfo.MinTLSVersion != "VersionTLS13" ||
+		!slices.Equal(config.ServingInfo.CipherSuites, []string{"TLS_AES_256_GCM_SHA384"}) ||
+		!slices.Equal(config.ServingInfo.CurvePreferences, []int32{int32(tls.CurveP384)}) {
+		t.Errorf("updated ServingInfo = %#v, want TLS 1.3 settings from observed config", config.ServingInfo)
+	}
+}
+
 func TestTLSProfileFromObservedConfig(t *testing.T) {
 	operatorSpec := &operatorv1.OperatorSpec{
 		ObservedConfig: runtime.RawExtension{Raw: []byte(`{"olmTLSSecurityProfile":{"minTLSVersion":"VersionTLS12","cipherSuites":["TLS_AES_128_GCM_SHA256"],"curvePreferences":["X25519","secp256r1"]}}`)},

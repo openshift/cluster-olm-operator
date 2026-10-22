@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -117,6 +118,31 @@ func TLSProfileFromObservedConfig(operatorSpec *operatorv1.OperatorSpec, tlsGrou
 		return "", nil, nil
 	}
 	return minTLS, ciphers, curvePreferencesFromTLSGroups(groups)
+}
+
+// UpdateMetricsServerConfigFromObservedTLS updates the watched metrics server config file
+// only when the observed TLS settings differ from the settings used at startup. It returns
+// the observed serving info and whether the file was updated.
+func UpdateMetricsServerConfigFromObservedTLS(metricsConfigFile string, initialServingInfo configv1.HTTPServingInfo, operatorSpec *operatorv1.OperatorSpec, tlsGroupPreferencesEnabled bool) (configv1.HTTPServingInfo, bool, error) {
+	minTLS, ciphers, curvePreferences := TLSProfileFromObservedConfig(operatorSpec, tlsGroupPreferencesEnabled)
+	if minTLS == "" {
+		return configv1.HTTPServingInfo{}, false, nil
+	}
+
+	observedServingInfo := configv1.HTTPServingInfo{
+		ServingInfo: configv1.ServingInfo{
+			MinTLSVersion:    minTLS,
+			CipherSuites:     ciphers,
+			CurvePreferences: curvePreferences,
+		},
+	}
+	if reflect.DeepEqual(observedServingInfo.ServingInfo, initialServingInfo.ServingInfo) || metricsConfigFile == "" {
+		return observedServingInfo, false, nil
+	}
+	if err := UpdateMetricsServerConfigFile(metricsConfigFile, observedServingInfo); err != nil {
+		return observedServingInfo, false, err
+	}
+	return observedServingInfo, true, nil
 }
 
 // curvePreferencesFromTLSGroups converts OpenShift TLS group names to the numeric
