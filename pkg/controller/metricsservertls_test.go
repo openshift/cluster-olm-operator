@@ -15,10 +15,14 @@ import (
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	configv1typed "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
+	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	"github.com/openshift/library-go/pkg/operator/events"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/utils/clock"
 )
 
 // fakeAPIServerGetter is a minimal configclient.Interface that returns a fixed APIServer.
@@ -341,5 +345,47 @@ func TestFIPSApprovedTLSGroups(t *testing.T) {
 	want := []configv1.TLSGroup{configv1.TLSGroupSecP256r1, configv1.TLSGroupSecP384r1}
 	if !slices.Equal(got, want) {
 		t.Errorf("fipsApprovedTLSGroups() = %v, want %v", got, want)
+	}
+}
+
+func TestMetricsTLSProfileMatchesLibraryGoObservation(t *testing.T) {
+	apiServer := &configv1.APIServer{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Spec: configv1.APIServerSpec{
+			TLSSecurityProfile: &configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType},
+		},
+	}
+
+	direct, err := GetMetricsServerTLSServingInfo(context.Background(), &fakeAPIServerGetter{apiServer: apiServer}, true)
+	if err != nil {
+		t.Fatalf("GetMetricsServerTLSServingInfo() error = %v", err)
+	}
+
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	if err := indexer.Add(apiServer); err != nil {
+		t.Fatalf("add APIServer to indexer: %v", err)
+	}
+	listers := OLMConfigObserverListers{
+		APIServerListerImpl: configlistersv1.NewAPIServerLister(indexer),
+	}
+	observed, errs := observeTLSSecurityProfileForOLM(
+		listers,
+		events.NewInMemoryRecorder("test", clock.RealClock{}),
+		nil,
+		true,
+	)
+	if len(errs) > 0 {
+		t.Fatalf("observeTLSSecurityProfileForOLM() errors = %v", errs)
+	}
+
+	data, err := json.Marshal(observed)
+	if err != nil {
+		t.Fatalf("marshal observed TLS profile: %v", err)
+	}
+	minTLS, ciphers, curves := TLSProfileFromObservedConfig(&operatorv1.OperatorSpec{
+		ObservedConfig: runtime.RawExtension{Raw: data},
+	}, true)
+	if minTLS != direct.MinTLSVersion || !slices.Equal(ciphers, direct.CipherSuites) || !slices.Equal(curves, direct.CurvePreferences) {
+		t.Errorf("metrics TLS profile = (%q, %v, %v), library-go observation = (%q, %v, %v)", direct.MinTLSVersion, direct.CipherSuites, direct.CurvePreferences, minTLS, ciphers, curves)
 	}
 }

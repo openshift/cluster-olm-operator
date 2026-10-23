@@ -79,6 +79,7 @@ func NewTLSObserverController(
 		operatorClient.Informer(),
 		configInformers.Config().V1().APIServers().Informer(),
 	}
+	tlsGroupPreferencesEnabled := featureGate != nil && featureGate.Enabled(features.FeatureGateTLSGroupPreferences)
 
 	klog.Infof("TLS observer controller %s: registering informers for operator client and APIServer config", name)
 
@@ -96,7 +97,7 @@ func NewTLSObserverController(
 			},
 			informers,
 			func(genericListers configobserver.Listers, recorder events.Recorder, existingConfig map[string]interface{}) (map[string]interface{}, []error) {
-				return observeTLSSecurityProfileForOLM(genericListers, recorder, existingConfig, featureGate != nil && featureGate.Enabled(features.FeatureGateTLSGroupPreferences))
+				return observeTLSSecurityProfileForOLM(genericListers, recorder, existingConfig, tlsGroupPreferencesEnabled)
 			},
 		),
 	}

@@ -105,7 +105,7 @@ func newStartCommand() *cobra.Command {
 	// controllercmd's WithRestartOnChange. It is shared with runOperator via the closure
 	// so that the TLS change handler can update it and trigger a graceful restart.
 	var metricsConfigFile string
-	var startupFeatureGate configv1.FeatureGate
+	var startupFeatureGate *configv1.FeatureGate
 
 	cmd := controllercmd.NewControllerCommandConfig(
 		"cluster-olm-operator",
@@ -118,26 +118,30 @@ func newStartCommand() *cobra.Command {
 	cmd.Use = "start"
 	cmd.Short = "Start the Cluster OLM Operator"
 
-	// Read the cluster FeatureGate before controllercmd starts the server so the metrics
-	// configuration and runOperator use the same feature-gate snapshot. When --config is
-	// not provided, also pre-configure metrics TLS from the APIServer profile.
+	// Read the cluster FeatureGate before controllercmd starts the server so a successful
+	// metrics preconfiguration and runOperator use the same feature-gate snapshot. If this
+	// optional startup read fails, runOperator retries it and retains its error context.
+	// When --config is not provided, also pre-configure metrics TLS from the APIServer profile.
 	cmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
 		kubeConfig, err := libgoclient.GetKubeConfigOrInClusterConfig("", nil)
 		if err != nil {
-			return errors.New("unable to load configuration for startup FeatureGate")
+			klog.Warningf("Skipping metrics server TLS pre-configuration: unable to load configuration for startup FeatureGate: %v", err)
+			return nil
 		}
 		cfgClient, err := configclient.NewForConfig(kubeConfig)
 		if err != nil {
-			return errors.New("unable to create config client for startup FeatureGate")
+			klog.Warningf("Skipping metrics server TLS pre-configuration: unable to create config client for startup FeatureGate: %v", err)
+			return nil
 		}
 		ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 		defer cancel()
 
 		featureGate, err := cfgClient.ConfigV1().FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
 		if err != nil {
-			return errors.New("unable to retrieve startup FeatureGate")
+			klog.Warningf("Skipping metrics server TLS pre-configuration: unable to retrieve startup FeatureGate: %v", err)
+			return nil
 		}
-		startupFeatureGate = *featureGate.DeepCopy()
+		startupFeatureGate = featureGate.DeepCopy()
 
 		if cmd.Flags().Changed("config") {
 			return nil
@@ -357,13 +361,20 @@ func objectControllerRendered(relatedObjects []configv1.ObjectReference) bool {
 	return false
 }
 
-func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metricsConfigFile string, startupFeatureGate configv1.FeatureGate) error {
+func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metricsConfigFile string, startupFeatureGate *configv1.FeatureGate) error {
 	cl, err := clients.New(cc)
 	if err != nil {
 		return err
 	}
 
 	log := klog.FromContext(ctx)
+	featureGate := startupFeatureGate
+	if featureGate == nil {
+		featureGate, err = cl.ConfigClient.ConfigV1().FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("unable to retrieve featureSet: %w", err)
+		}
+	}
 
 	infra, err := cl.ConfigClient.ConfigV1().Infrastructures().Get(ctx, "cluster", metav1.GetOptions{})
 	if err != nil {
@@ -382,7 +393,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 				Scope:            meta.RESTScopeRoot,
 			},
 		},
-		FeatureGate:    startupFeatureGate,
+		FeatureGate:    *featureGate,
 		Infrastructure: infra,
 	}
 	currentFeatureGates, err := cb.CurrentFeatureGates()
