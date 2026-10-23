@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/openshift/api/features"
 	operatorv1 "github.com/openshift/api/operator/v1"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/library-go/pkg/operator/deploymentcontroller"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -20,12 +22,12 @@ import (
 
 // UpdateDeploymentObservedConfigHook creates a deployment hook that reads observedConfig
 // from the olms.operator.openshift.io resource and extracts TLS configuration
-func UpdateDeploymentObservedConfigHook(_ *clients.OperatorClient) deploymentcontroller.DeploymentHookFunc {
+func UpdateDeploymentObservedConfigHook(_ *clients.OperatorClient, featureGate featuregates.FeatureGate) deploymentcontroller.DeploymentHookFunc {
 	return func(operatorSpec *operatorv1.OperatorSpec, deployment *appsv1.Deployment) error {
 		klog.V(1).Infof("ObservedConfigHook updating arguments for deployment %s", deployment.Name)
 
 		// Extract TLS configuration from observedConfig
-		cfg, err := extractTLSConfigFromObservedConfig(operatorSpec)
+		cfg, err := extractTLSConfigFromObservedConfig(operatorSpec, featureGate != nil && featureGate.Enabled(features.FeatureGateTLSGroupPreferences))
 		if err != nil {
 			klog.V(2).Infof("Failed to extract TLS config from observedConfig: %v", err)
 			// Don't return error - just log and continue without TLS env vars
@@ -56,7 +58,7 @@ func UpdateDeploymentObservedConfigHook(_ *clients.OperatorClient) deploymentcon
 
 // extractTLSConfigFromObservedConfig extracts TLS security profile configuration from
 // the operator's observedConfig and returns environment variables
-func extractTLSConfigFromObservedConfig(operatorSpec *operatorv1.OperatorSpec) ([]string, error) {
+func extractTLSConfigFromObservedConfig(operatorSpec *operatorv1.OperatorSpec, tlsGroupPreferencesEnabled bool) ([]string, error) {
 	if operatorSpec == nil || len(operatorSpec.ObservedConfig.Raw) == 0 {
 		return nil, nil
 	}
@@ -110,15 +112,17 @@ func extractTLSConfigFromObservedConfig(operatorSpec *operatorv1.OperatorSpec) (
 		hasCiphers = true
 	}
 
-	// Extract curvePreferences. FIPS filtering is already applied by library-go's
-	// observer before storing this value.
-	if curvePrefs, found, err := unstructured.NestedStringSlice(tlsProfile, "curvePreferences"); err != nil {
-		return nil, fmt.Errorf("error accessing curvePreferences: %w", err)
-	} else if found && len(curvePrefs) > 0 {
-		curvesStr := strings.Join(curvePrefs, ",")
-		args = append(args, fmt.Sprintf("--tls-custom-curves=%s", curvesStr))
-		klog.V(3).Infof("Extracted %d curve preferences: %s", len(curvePrefs), curvesStr)
-		hasCurves = true
+	if tlsGroupPreferencesEnabled {
+		// FIPS filtering is already applied by library-go's observer before
+		// storing this value.
+		if curvePrefs, found, err := unstructured.NestedStringSlice(tlsProfile, "curvePreferences"); err != nil {
+			return nil, fmt.Errorf("error accessing curvePreferences: %w", err)
+		} else if found && len(curvePrefs) > 0 {
+			curvesStr := strings.Join(curvePrefs, ",")
+			args = append(args, fmt.Sprintf("--tls-custom-curves=%s", curvesStr))
+			klog.V(3).Infof("Extracted %d curve preferences: %s", len(curvePrefs), curvesStr)
+			hasCurves = true
+		}
 	}
 
 	// Valid configurations are no TLS settings, minTLSVersion with

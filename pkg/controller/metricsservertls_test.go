@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"crypto/fips140"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -14,10 +15,14 @@ import (
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	configv1typed "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
+	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	"github.com/openshift/library-go/pkg/operator/events"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/utils/clock"
 )
 
 // fakeAPIServerGetter is a minimal configclient.Interface that returns a fixed APIServer.
@@ -109,15 +114,19 @@ func TestTLSSettingsFromProfile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			minTLS, ciphers, curves := tlsSettingsFromProfile(tt.profile)
+			expectedCurves := tt.wantCurvePreferences
+			if fips140.Enabled() && expectedCurves != nil {
+				expectedCurves = []int32{int32(tls.CurveP256)}
+			}
+			minTLS, ciphers, curves := tlsSettingsFromProfile(tt.profile, true)
 			if minTLS != tt.wantMinTLSVersion {
 				t.Errorf("minTLSVersion = %q, want %q", minTLS, tt.wantMinTLSVersion)
 			}
 			if tt.wantCipherSuitesDep && len(ciphers) == 0 {
 				t.Error("expected non-empty cipherSuites")
 			}
-			if tt.wantCurvePreferences != nil && !slices.Equal(curves, tt.wantCurvePreferences) {
-				t.Errorf("curvePreferences = %v, want %v", curves, tt.wantCurvePreferences)
+			if expectedCurves != nil && !slices.Equal(curves, expectedCurves) {
+				t.Errorf("curvePreferences = %v, want %v", curves, expectedCurves)
 			}
 		})
 	}
@@ -127,7 +136,7 @@ func TestGetMetricsServerTLSServingInfo_NotFound(t *testing.T) {
 	client := &fakeAPIServerGetter{
 		err: apierrors.NewNotFound(schema.GroupResource{Resource: "apiservers"}, "cluster"),
 	}
-	info, err := GetMetricsServerTLSServingInfo(context.Background(), client)
+	info, err := GetMetricsServerTLSServingInfo(context.Background(), client, true)
 	if err != nil {
 		t.Fatalf("expected no error for NotFound, got: %v", err)
 	}
@@ -138,7 +147,7 @@ func TestGetMetricsServerTLSServingInfo_NotFound(t *testing.T) {
 
 func TestGetMetricsServerTLSServingInfo_Error(t *testing.T) {
 	client := &fakeAPIServerGetter{err: errors.New("connection refused")}
-	_, err := GetMetricsServerTLSServingInfo(context.Background(), client)
+	_, err := GetMetricsServerTLSServingInfo(context.Background(), client, true)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -154,7 +163,7 @@ func TestGetMetricsServerTLSServingInfo_IntermediateProfile(t *testing.T) {
 			},
 		},
 	}
-	info, err := GetMetricsServerTLSServingInfo(context.Background(), client)
+	info, err := GetMetricsServerTLSServingInfo(context.Background(), client, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -209,12 +218,72 @@ func TestWriteMetricsServerConfigFile(t *testing.T) {
 	}
 }
 
+func TestUpdateMetricsServerConfigFromObservedTLS(t *testing.T) {
+	initialServingInfo := configv1.HTTPServingInfo{
+		ServingInfo: configv1.ServingInfo{
+			MinTLSVersion:    "VersionTLS12",
+			CipherSuites:     []string{"TLS_AES_128_GCM_SHA256"},
+			CurvePreferences: []int32{int32(tls.X25519), int32(tls.CurveP256)},
+		},
+	}
+	path, err := WriteMetricsServerConfigFile(initialServingInfo)
+	if err != nil {
+		t.Fatalf("WriteMetricsServerConfigFile error: %v", err)
+	}
+	defer os.Remove(path)
+
+	unchangedSpec := &operatorv1.OperatorSpec{
+		ObservedConfig: runtime.RawExtension{Raw: []byte(`{"olmTLSSecurityProfile":{"minTLSVersion":"VersionTLS12","cipherSuites":["TLS_AES_128_GCM_SHA256"],"curvePreferences":["X25519","secp256r1"]}}`)},
+	}
+	if err := os.Chmod(path, 0400); err != nil {
+		t.Fatalf("chmod config file read-only: %v", err)
+	}
+	_, updated, err := UpdateMetricsServerConfigFromObservedTLS(path, initialServingInfo, unchangedSpec, true)
+	if err != nil {
+		t.Fatalf("unexpected error for unchanged TLS settings: %v", err)
+	}
+	if updated {
+		t.Fatal("expected unchanged TLS settings not to rewrite the metrics config file")
+	}
+
+	if err := os.Chmod(path, 0600); err != nil {
+		t.Fatalf("restore config file write permission: %v", err)
+	}
+	changedSpec := &operatorv1.OperatorSpec{
+		ObservedConfig: runtime.RawExtension{Raw: []byte(`{"olmTLSSecurityProfile":{"minTLSVersion":"VersionTLS13","cipherSuites":["TLS_AES_256_GCM_SHA384"],"curvePreferences":["secp384r1"]}}`)},
+	}
+	observedServingInfo, updated, err := UpdateMetricsServerConfigFromObservedTLS(path, initialServingInfo, changedSpec, true)
+	if err != nil {
+		t.Fatalf("unexpected error for changed TLS settings: %v", err)
+	}
+	if !updated {
+		t.Fatal("expected changed TLS settings to rewrite the metrics config file")
+	}
+	if observedServingInfo.MinTLSVersion != "VersionTLS13" {
+		t.Errorf("updated MinTLSVersion = %q, want VersionTLS13", observedServingInfo.MinTLSVersion)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read updated config file: %v", err)
+	}
+	var config operatorv1alpha1.GenericOperatorConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatalf("unmarshal updated config file: %v", err)
+	}
+	if config.ServingInfo.MinTLSVersion != "VersionTLS13" ||
+		!slices.Equal(config.ServingInfo.CipherSuites, []string{"TLS_AES_256_GCM_SHA384"}) ||
+		!slices.Equal(config.ServingInfo.CurvePreferences, []int32{int32(tls.CurveP384)}) {
+		t.Errorf("updated ServingInfo = %#v, want TLS 1.3 settings from observed config", config.ServingInfo)
+	}
+}
+
 func TestTLSProfileFromObservedConfig(t *testing.T) {
 	operatorSpec := &operatorv1.OperatorSpec{
 		ObservedConfig: runtime.RawExtension{Raw: []byte(`{"olmTLSSecurityProfile":{"minTLSVersion":"VersionTLS12","cipherSuites":["TLS_AES_128_GCM_SHA256"],"curvePreferences":["X25519","secp256r1"]}}`)},
 	}
 
-	minTLS, ciphers, curves := TLSProfileFromObservedConfig(operatorSpec)
+	minTLS, ciphers, curves := TLSProfileFromObservedConfig(operatorSpec, true)
 	if minTLS != "VersionTLS12" {
 		t.Errorf("MinTLSVersion = %q, want VersionTLS12", minTLS)
 	}
@@ -231,8 +300,92 @@ func TestTLSProfileFromObservedConfig_MalformedCurvePreferences(t *testing.T) {
 		ObservedConfig: runtime.RawExtension{Raw: []byte(`{"olmTLSSecurityProfile":{"minTLSVersion":"VersionTLS12","cipherSuites":["TLS_AES_128_GCM_SHA256"],"curvePreferences":"X25519"}}`)},
 	}
 
-	minTLS, ciphers, curves := TLSProfileFromObservedConfig(operatorSpec)
+	minTLS, ciphers, curves := TLSProfileFromObservedConfig(operatorSpec, true)
 	if minTLS != "" || ciphers != nil || curves != nil {
 		t.Errorf("TLSProfileFromObservedConfig() = (%q, %v, %v), want empty settings", minTLS, ciphers, curves)
+	}
+}
+
+func TestTLSGroupPreferencesDisabled(t *testing.T) {
+	profile := &configv1.TLSSecurityProfile{
+		Type: configv1.TLSProfileCustomType,
+		Custom: &configv1.CustomTLSProfile{TLSProfileSpec: configv1.TLSProfileSpec{
+			MinTLSVersion: configv1.VersionTLS12,
+			Ciphers:       []string{"ECDHE-ECDSA-AES256-GCM-SHA384"},
+			Groups:        []configv1.TLSGroup{configv1.TLSGroupX25519},
+		}},
+	}
+	minTLS, ciphers, curves := tlsSettingsFromProfile(profile, false)
+	wantProfileCiphers := []string{"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"}
+	if minTLS != string(configv1.VersionTLS12) || !slices.Equal(ciphers, wantProfileCiphers) {
+		t.Errorf("tlsSettingsFromProfile() = (%q, %v, %v), want version/ciphers with nil curves", minTLS, ciphers, curves)
+	}
+	if curves != nil {
+		t.Errorf("curvePreferences = %v, want nil when TLSGroupPreferences is disabled", curves)
+	}
+
+	operatorSpec := &operatorv1.OperatorSpec{
+		ObservedConfig: runtime.RawExtension{Raw: []byte(`{"olmTLSSecurityProfile":{"minTLSVersion":"VersionTLS12","cipherSuites":["TLS_AES_128_GCM_SHA256"],"curvePreferences":["X25519"]}}`)},
+	}
+	minTLS, ciphers, curves = TLSProfileFromObservedConfig(operatorSpec, false)
+	wantObservedCiphers := []string{"TLS_AES_128_GCM_SHA256"}
+	if minTLS != "VersionTLS12" || !slices.Equal(ciphers, wantObservedCiphers) || curves != nil {
+		t.Errorf("TLSProfileFromObservedConfig() = (%q, %v, %v), want version/ciphers with nil curves", minTLS, ciphers, curves)
+	}
+}
+
+func TestFIPSApprovedTLSGroups(t *testing.T) {
+	groups := []configv1.TLSGroup{
+		configv1.TLSGroupX25519MLKEM768,
+		configv1.TLSGroupX25519,
+		configv1.TLSGroupSecP256r1,
+		configv1.TLSGroupSecP384r1,
+	}
+	got := fipsApprovedTLSGroups(groups, true)
+	want := []configv1.TLSGroup{configv1.TLSGroupSecP256r1, configv1.TLSGroupSecP384r1}
+	if !slices.Equal(got, want) {
+		t.Errorf("fipsApprovedTLSGroups() = %v, want %v", got, want)
+	}
+}
+
+func TestMetricsTLSProfileMatchesLibraryGoObservation(t *testing.T) {
+	apiServer := &configv1.APIServer{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Spec: configv1.APIServerSpec{
+			TLSSecurityProfile: &configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType},
+		},
+	}
+
+	direct, err := GetMetricsServerTLSServingInfo(context.Background(), &fakeAPIServerGetter{apiServer: apiServer}, true)
+	if err != nil {
+		t.Fatalf("GetMetricsServerTLSServingInfo() error = %v", err)
+	}
+
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	if err := indexer.Add(apiServer); err != nil {
+		t.Fatalf("add APIServer to indexer: %v", err)
+	}
+	listers := OLMConfigObserverListers{
+		APIServerListerImpl: configlistersv1.NewAPIServerLister(indexer),
+	}
+	observed, errs := observeTLSSecurityProfileForOLM(
+		listers,
+		events.NewInMemoryRecorder("test", clock.RealClock{}),
+		nil,
+		true,
+	)
+	if len(errs) > 0 {
+		t.Fatalf("observeTLSSecurityProfileForOLM() errors = %v", errs)
+	}
+
+	data, err := json.Marshal(observed)
+	if err != nil {
+		t.Fatalf("marshal observed TLS profile: %v", err)
+	}
+	minTLS, ciphers, curves := TLSProfileFromObservedConfig(&operatorv1.OperatorSpec{
+		ObservedConfig: runtime.RawExtension{Raw: data},
+	}, true)
+	if minTLS != direct.MinTLSVersion || !slices.Equal(ciphers, direct.CipherSuites) || !slices.Equal(curves, direct.CurvePreferences) {
+		t.Errorf("metrics TLS profile = (%q, %v, %v), library-go observation = (%q, %v, %v)", direct.MinTLSVersion, direct.CipherSuites, direct.CurvePreferences, minTLS, ciphers, curves)
 	}
 }

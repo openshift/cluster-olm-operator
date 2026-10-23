@@ -40,12 +40,13 @@ import (
 )
 
 type Builder struct {
-	Assets            string
-	Clients           *clients.Clients
-	ControllerContext *controllercmd.ControllerContext
-	KnownRESTMappings map[schema.GroupVersionKind]*meta.RESTMapping
-	FeatureGate       configv1.FeatureGate
-	Infrastructure    *configv1.Infrastructure
+	Assets              string
+	Clients             *clients.Clients
+	ControllerContext   *controllercmd.ControllerContext
+	KnownRESTMappings   map[schema.GroupVersionKind]*meta.RESTMapping
+	FeatureGate         configv1.FeatureGate
+	ClusterFeatureGates featuregates.FeatureGate
+	Infrastructure      *configv1.Infrastructure
 }
 
 func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory.Controller, map[string]factory.Controller, map[string]factory.Controller, []configv1.ObjectReference, error) {
@@ -106,7 +107,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 						replaceVerbosityHook("${LOG_VERBOSITY}"),
 					},
 					UpdateDeploymentProxyHook(b.Clients.ProxyClient),
-					UpdateDeploymentObservedConfigHook(b.Clients.OperatorClient),
+					UpdateDeploymentObservedConfigHook(b.Clients.OperatorClient, b.ClusterFeatureGates),
 				)
 				return nil
 			}
@@ -169,9 +170,18 @@ func (b *Builder) UseExperimentalFeatureSet() bool {
 }
 
 func (b *Builder) CurrentFeatureGates() (featuregates.FeatureGate, error) {
+	return FeatureGatesFromStatus(&b.FeatureGate), nil
+}
+
+// FeatureGatesFromStatus returns the feature gates reported by the cluster
+// FeatureGate resource. Status is the set of gates effective for this cluster version.
+func FeatureGatesFromStatus(featureGate *configv1.FeatureGate) featuregates.FeatureGate {
 	enabledFeatures := make([]configv1.FeatureGateName, 0, 10)
 	disabledFeatures := make([]configv1.FeatureGateName, 0, 10)
-	for _, featureGateValues := range b.FeatureGate.Status.FeatureGates {
+	if featureGate == nil {
+		return NewFeatureGate(enabledFeatures, disabledFeatures)
+	}
+	for _, featureGateValues := range featureGate.Status.FeatureGates {
 		// We don't check featureGateValues.Version... but perhaps we should
 		for _, enabled := range featureGateValues.Enabled {
 			enabledFeatures = append(enabledFeatures, enabled.Name)
@@ -181,7 +191,7 @@ func (b *Builder) CurrentFeatureGates() (featuregates.FeatureGate, error) {
 		}
 	}
 	// TODO: Replace this with featuregates.NewFeatureGate to use the real thing that panics
-	return NewFeatureGate(enabledFeatures, disabledFeatures), nil
+	return NewFeatureGate(enabledFeatures, disabledFeatures)
 }
 
 // HasEnabledDownstreamFeatureGates checks if any downstream feature gates

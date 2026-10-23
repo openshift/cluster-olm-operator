@@ -1,11 +1,13 @@
 package controller
 
 import (
+	"github.com/openshift/api/features"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/configobserver"
 	"github.com/openshift/library-go/pkg/operator/configobserver/apiserver"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/resourcesynccontroller"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
@@ -68,6 +70,7 @@ func NewTLSObserverController(
 	name string,
 	operatorClient v1helpers.OperatorClient,
 	configInformers configinformers.SharedInformerFactory,
+	featureGate featuregates.FeatureGate,
 	eventRecorder events.Recorder,
 ) *TLSObserverController {
 	klog.Infof("Creating TLS observer controller: %s", name)
@@ -76,6 +79,7 @@ func NewTLSObserverController(
 		operatorClient.Informer(),
 		configInformers.Config().V1().APIServers().Informer(),
 	}
+	tlsGroupPreferencesEnabled := featureGate != nil && featureGate.Enabled(features.FeatureGateTLSGroupPreferences)
 
 	klog.Infof("TLS observer controller %s: registering informers for operator client and APIServer config", name)
 
@@ -92,7 +96,9 @@ func NewTLSObserverController(
 				},
 			},
 			informers,
-			observeTLSSecurityProfileForOLM,
+			func(genericListers configobserver.Listers, recorder events.Recorder, existingConfig map[string]interface{}) (map[string]interface{}, []error) {
+				return observeTLSSecurityProfileForOLM(genericListers, recorder, existingConfig, tlsGroupPreferencesEnabled)
+			},
 		),
 	}
 
@@ -102,7 +108,7 @@ func NewTLSObserverController(
 
 // observeTLSSecurityProfileForOLM uses the library-go ObserveTLSSecurityProfile function
 // with OLM-specific configuration paths
-func observeTLSSecurityProfileForOLM(genericListers configobserver.Listers, recorder events.Recorder, existingConfig map[string]interface{}) (map[string]interface{}, []error) {
+func observeTLSSecurityProfileForOLM(genericListers configobserver.Listers, recorder events.Recorder, existingConfig map[string]interface{}, tlsGroupPreferencesEnabled bool) (map[string]interface{}, []error) {
 	klog.Info("TLS observer: starting TLS security profile observation")
 
 	minTLSPath := TLSMinVersionPath()
@@ -114,14 +120,13 @@ func observeTLSSecurityProfileForOLM(genericListers configobserver.Listers, reco
 
 	logTLSConfig("existing", existingConfig, minTLSPath, cipherSuitesPath, curvePreferencesPath)
 
-	observedConfig, errs := apiserver.ObserveTLSSecurityProfileWithGroupPaths(
-		genericListers,
-		recorder,
-		existingConfig,
-		minTLSPath,
-		cipherSuitesPath,
-		curvePreferencesPath,
-	)
+	var observedConfig map[string]interface{}
+	var errs []error
+	if tlsGroupPreferencesEnabled {
+		observedConfig, errs = apiserver.ObserveTLSSecurityProfileWithGroupPaths(genericListers, recorder, existingConfig, minTLSPath, cipherSuitesPath, curvePreferencesPath)
+	} else {
+		observedConfig, errs = apiserver.ObserveTLSSecurityProfileWithPaths(genericListers, recorder, existingConfig, minTLSPath, cipherSuitesPath)
+	}
 
 	if len(errs) > 0 {
 		klog.Warningf("TLS observer: encountered %d errors during observation", len(errs))
