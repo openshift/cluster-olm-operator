@@ -49,6 +49,9 @@ const (
 	assetPath          = "/operand-assets"
 	manifestsPath      = "/manifests"
 
+	startupConfigRetryInterval = time.Second
+	startupConfigRetryTimeout  = 30 * time.Second
+
 	// operator-controller resource identifiers
 	operatorControllerNamespace                   = "openshift-operator-controller"
 	operatorControllerServiceAccount              = "operator-controller-controller-manager"
@@ -118,28 +121,24 @@ func newStartCommand() *cobra.Command {
 	cmd.Use = "start"
 	cmd.Short = "Start the Cluster OLM Operator"
 
-	// Read the cluster FeatureGate before controllercmd starts the server so a successful
-	// metrics preconfiguration and runOperator use the same feature-gate snapshot. If this
-	// optional startup read fails, runOperator retries it and retains its error context.
-	// When --config is not provided, also pre-configure metrics TLS from the APIServer profile.
+	// Read the cluster FeatureGate before controllercmd starts the server so metrics
+	// preconfiguration and runOperator use the same feature-gate snapshot. When --config is
+	// not provided, also pre-configure metrics TLS from the APIServer profile. Retrying here
+	// ensures the metrics server never starts with default TLS settings after a transient read
+	// failure.
 	cmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
 		kubeConfig, err := libgoclient.GetKubeConfigOrInClusterConfig("", nil)
 		if err != nil {
-			klog.Warningf("Skipping metrics server TLS pre-configuration: unable to load configuration for startup FeatureGate: %v", err)
-			return nil
+			return fmt.Errorf("unable to load configuration for startup FeatureGate: %w", err)
 		}
 		cfgClient, err := configclient.NewForConfig(kubeConfig)
 		if err != nil {
-			klog.Warningf("Skipping metrics server TLS pre-configuration: unable to create config client for startup FeatureGate: %v", err)
-			return nil
+			return fmt.Errorf("unable to create config client for startup FeatureGate: %w", err)
 		}
-		ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
-		defer cancel()
 
-		featureGate, err := cfgClient.ConfigV1().FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
+		featureGate, err := startupFeatureGateWithRetry(cmd.Context(), cfgClient)
 		if err != nil {
-			klog.Warningf("Skipping metrics server TLS pre-configuration: unable to retrieve startup FeatureGate: %v", err)
-			return nil
+			return err
 		}
 		startupFeatureGate = featureGate.DeepCopy()
 
@@ -147,21 +146,51 @@ func newStartCommand() *cobra.Command {
 			return nil
 		}
 		tlsGroupPreferencesEnabled := controller.FeatureGatesFromStatus(featureGate).Enabled(features.FeatureGateTLSGroupPreferences)
-		servingInfo, err := controller.GetMetricsServerTLSServingInfo(ctx, cfgClient, tlsGroupPreferencesEnabled)
-		if err != nil || servingInfo.MinTLSVersion == "" {
-			klog.Warningf("Skipping metrics server TLS pre-configuration: %v", err)
-			return nil
+		servingInfo, err := metricsTLSServingInfoWithRetry(cmd.Context(), cfgClient, tlsGroupPreferencesEnabled)
+		if err != nil {
+			return err
 		}
 		configFile, err := controller.WriteMetricsServerConfigFile(servingInfo)
 		if err != nil {
-			klog.Warningf("Skipping metrics server TLS pre-configuration (write error): %v", err)
-			return nil
+			return fmt.Errorf("unable to write metrics server TLS configuration: %w", err)
 		}
 		metricsConfigFile = configFile
 		return cmd.Flags().Set("config", configFile)
 	}
 
 	return cmd
+}
+
+func startupFeatureGateWithRetry(ctx context.Context, configClient configclient.Interface) (*configv1.FeatureGate, error) {
+	var featureGate *configv1.FeatureGate
+	var lastErr error
+	err := wait.PollUntilContextTimeout(ctx, startupConfigRetryInterval, startupConfigRetryTimeout, true, func(ctx context.Context) (bool, error) {
+		featureGate, lastErr = configClient.ConfigV1().FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
+		return lastErr == nil, nil
+	})
+	if err != nil {
+		if lastErr == nil {
+			lastErr = err
+		}
+		return nil, fmt.Errorf("unable to retrieve startup FeatureGate: %w", lastErr)
+	}
+	return featureGate, nil
+}
+
+func metricsTLSServingInfoWithRetry(ctx context.Context, configClient configclient.Interface, tlsGroupPreferencesEnabled bool) (configv1.HTTPServingInfo, error) {
+	var servingInfo configv1.HTTPServingInfo
+	var lastErr error
+	err := wait.PollUntilContextTimeout(ctx, startupConfigRetryInterval, startupConfigRetryTimeout, true, func(ctx context.Context) (bool, error) {
+		servingInfo, lastErr = controller.GetMetricsServerTLSServingInfo(ctx, configClient, tlsGroupPreferencesEnabled)
+		return lastErr == nil && servingInfo.MinTLSVersion != "", nil
+	})
+	if err != nil {
+		if lastErr == nil {
+			lastErr = errors.New("APIServer/cluster TLS security profile is empty")
+		}
+		return configv1.HTTPServingInfo{}, fmt.Errorf("unable to retrieve startup metrics TLS profile: %w", lastErr)
+	}
+	return servingInfo, nil
 }
 
 // waitForComponentResources waits for the operatorControllerNamespace and the given
