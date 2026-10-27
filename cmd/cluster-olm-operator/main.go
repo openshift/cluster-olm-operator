@@ -6,10 +6,10 @@ import (
 	goflag "flag"
 	"fmt"
 	"os"
-	"reflect"
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
 	"github.com/openshift/cluster-olm-operator/internal/versionutils"
 
 	_ "github.com/openshift/api/operator/v1/zz_generated.crd-manifests"
@@ -48,6 +48,9 @@ const (
 	olmProxyController = "OLMProxyController"
 	assetPath          = "/operand-assets"
 	manifestsPath      = "/manifests"
+
+	startupConfigRetryInterval = time.Second
+	startupConfigRetryTimeout  = 30 * time.Second
 
 	// operator-controller resource identifiers
 	operatorControllerNamespace                   = "openshift-operator-controller"
@@ -105,49 +108,89 @@ func newStartCommand() *cobra.Command {
 	// controllercmd's WithRestartOnChange. It is shared with runOperator via the closure
 	// so that the TLS change handler can update it and trigger a graceful restart.
 	var metricsConfigFile string
+	var startupFeatureGate *configv1.FeatureGate
 
 	cmd := controllercmd.NewControllerCommandConfig(
 		"cluster-olm-operator",
 		version.Get(),
 		func(ctx context.Context, cc *controllercmd.ControllerContext) error {
-			return runOperator(ctx, cc, metricsConfigFile)
+			return runOperator(ctx, cc, metricsConfigFile, startupFeatureGate)
 		},
 		clock.RealClock{},
 	).NewCommandWithContext(context.Background())
 	cmd.Use = "start"
 	cmd.Short = "Start the Cluster OLM Operator"
 
-	// Pre-configure the metrics server TLS from the cluster APIServer TLS profile before
-	// controllercmd starts the server. This runs only when --config is not already provided.
+	// Read the cluster FeatureGate before controllercmd starts the server so metrics
+	// preconfiguration and runOperator use the same feature-gate snapshot. When --config is
+	// not provided, also pre-configure metrics TLS from the APIServer profile. Retrying here
+	// ensures the metrics server never starts with default TLS settings after a transient read
+	// failure.
 	cmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
-		if cmd.Flags().Changed("config") {
-			return nil
-		}
 		kubeConfig, err := libgoclient.GetKubeConfigOrInClusterConfig("", nil)
 		if err != nil {
-			klog.Warningf("Skipping metrics server TLS pre-configuration (no in-cluster config): %v", err)
-			return nil
+			return fmt.Errorf("unable to load configuration for startup FeatureGate: %w", err)
 		}
 		cfgClient, err := configclient.NewForConfig(kubeConfig)
 		if err != nil {
-			klog.Warningf("Skipping metrics server TLS pre-configuration (config client error): %v", err)
+			return fmt.Errorf("unable to create config client for startup FeatureGate: %w", err)
+		}
+
+		featureGate, err := startupFeatureGateWithRetry(cmd.Context(), cfgClient)
+		if err != nil {
+			return err
+		}
+		startupFeatureGate = featureGate.DeepCopy()
+
+		if cmd.Flags().Changed("config") {
 			return nil
 		}
-		servingInfo, err := controller.GetMetricsServerTLSServingInfo(context.Background(), cfgClient)
-		if err != nil || servingInfo.MinTLSVersion == "" {
-			klog.Warningf("Skipping metrics server TLS pre-configuration: %v", err)
-			return nil
+		tlsGroupPreferencesEnabled := controller.FeatureGatesFromStatus(featureGate).Enabled(features.FeatureGateTLSGroupPreferences)
+		servingInfo, err := metricsTLSServingInfoWithRetry(cmd.Context(), cfgClient, tlsGroupPreferencesEnabled)
+		if err != nil {
+			return err
 		}
 		configFile, err := controller.WriteMetricsServerConfigFile(servingInfo)
 		if err != nil {
-			klog.Warningf("Skipping metrics server TLS pre-configuration (write error): %v", err)
-			return nil
+			return fmt.Errorf("unable to write metrics server TLS configuration: %w", err)
 		}
 		metricsConfigFile = configFile
 		return cmd.Flags().Set("config", configFile)
 	}
 
 	return cmd
+}
+
+func startupFeatureGateWithRetry(ctx context.Context, configClient configclient.Interface) (*configv1.FeatureGate, error) {
+	var featureGate *configv1.FeatureGate
+	var lastErr error
+	err := wait.PollUntilContextTimeout(ctx, startupConfigRetryInterval, startupConfigRetryTimeout, true, func(ctx context.Context) (bool, error) {
+		featureGate, lastErr = configClient.ConfigV1().FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
+		return lastErr == nil, nil
+	})
+	if err != nil {
+		if lastErr == nil {
+			lastErr = err
+		}
+		return nil, fmt.Errorf("unable to retrieve startup FeatureGate: %w", lastErr)
+	}
+	return featureGate, nil
+}
+
+func metricsTLSServingInfoWithRetry(ctx context.Context, configClient configclient.Interface, tlsGroupPreferencesEnabled bool) (configv1.HTTPServingInfo, error) {
+	var servingInfo configv1.HTTPServingInfo
+	var lastErr error
+	err := wait.PollUntilContextTimeout(ctx, startupConfigRetryInterval, startupConfigRetryTimeout, true, func(ctx context.Context) (bool, error) {
+		servingInfo, lastErr = controller.GetMetricsServerTLSServingInfo(ctx, configClient, tlsGroupPreferencesEnabled)
+		return lastErr == nil && servingInfo.MinTLSVersion != "", nil
+	})
+	if err != nil {
+		if lastErr == nil {
+			lastErr = errors.New("APIServer/cluster TLS security profile is empty")
+		}
+		return configv1.HTTPServingInfo{}, fmt.Errorf("unable to retrieve startup metrics TLS profile: %w", lastErr)
+	}
+	return servingInfo, nil
 }
 
 // waitForComponentResources waits for the operatorControllerNamespace and the given
@@ -347,17 +390,19 @@ func objectControllerRendered(relatedObjects []configv1.ObjectReference) bool {
 	return false
 }
 
-func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metricsConfigFile string) error {
+func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metricsConfigFile string, startupFeatureGate *configv1.FeatureGate) error {
 	cl, err := clients.New(cc)
 	if err != nil {
 		return err
 	}
 
 	log := klog.FromContext(ctx)
-
-	fg, err := cl.ConfigClient.ConfigV1().FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("unable to retrieve featureSet: %w", err)
+	featureGate := startupFeatureGate
+	if featureGate == nil {
+		featureGate, err = cl.ConfigClient.ConfigV1().FeatureGates().Get(ctx, "cluster", metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("unable to retrieve featureSet: %w", err)
+		}
 	}
 
 	infra, err := cl.ConfigClient.ConfigV1().Infrastructures().Get(ctx, "cluster", metav1.GetOptions{})
@@ -377,9 +422,14 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 				Scope:            meta.RESTScopeRoot,
 			},
 		},
-		FeatureGate:    *fg,
+		FeatureGate:    *featureGate,
 		Infrastructure: infra,
 	}
+	currentFeatureGates, err := cb.CurrentFeatureGates()
+	if err != nil {
+		return fmt.Errorf("unable to retrieve current featureSet: %w", err)
+	}
+	cb.ClusterFeatureGates = currentFeatureGates
 
 	staticResourceControllers, deploymentControllers, clusterCatalogControllers, relatedObjects, err := cb.BuildControllers("catalogd", "operator-controller")
 	if err != nil {
@@ -426,11 +476,6 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 		controllerNames,
 	)
 
-	currentFeatureGates, err := cb.CurrentFeatureGates()
-	if err != nil {
-		return fmt.Errorf("unable to retrieve current featureSet: %w", err)
-	}
-
 	incompatibleOperatorController := controller.NewIncompatibleOperatorController(
 		"OLMIncompatibleOperatorController",
 		currentOCPMinorVersion,
@@ -459,6 +504,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 		"OLMTLSSecurityProfileObserver",
 		cl.OperatorClient,
 		cl.ConfigInformerFactory,
+		currentFeatureGates,
 		cc.EventRecorder.ForComponent("OLMTLSSecurityProfileObserver"),
 	)
 
@@ -534,7 +580,8 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 	// Rather than calling os.Exit directly we update the config file that controllercmd's
 	// WithRestartOnChange is already watching — it detects the content change and performs
 	// a graceful restart for us.
-	initialTLSServingInfo, err := controller.GetMetricsServerTLSServingInfo(ctx, cl.ConfigClient)
+	tlsGroupPreferencesEnabled := currentFeatureGates.Enabled(features.FeatureGateTLSGroupPreferences)
+	initialTLSServingInfo, err := controller.GetMetricsServerTLSServingInfo(ctx, cl.ConfigClient, tlsGroupPreferencesEnabled)
 	if err != nil {
 		return fmt.Errorf("unable to retrieve initial TLS profile for metrics server: %w", err)
 	}
@@ -545,27 +592,16 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 				log.V(4).Info("Failed to get operator state in TLS change handler", "error", err)
 				return
 			}
-			newMinTLS, newCiphers, newCurvePreferences := controller.TLSProfileFromObservedConfig(operatorSpec)
-			if newMinTLS == "" {
-				return // observer hasn't stored a TLS profile yet
+			newServingInfo, updated, err := controller.UpdateMetricsServerConfigFromObservedTLS(metricsConfigFile, initialTLSServingInfo, operatorSpec, tlsGroupPreferencesEnabled)
+			if err != nil {
+				klog.Warningf("Failed to update metrics server TLS config file: %v", err)
+				return
 			}
-			if newMinTLS == initialTLSServingInfo.MinTLSVersion &&
-				reflect.DeepEqual(newCiphers, initialTLSServingInfo.CipherSuites) &&
-				reflect.DeepEqual(newCurvePreferences, initialTLSServingInfo.CurvePreferences) {
-				return // unchanged
+			if !updated {
+				return
 			}
 			log.Info("TLS security profile changed, updating metrics server config to trigger restart",
-				"old", initialTLSServingInfo.MinTLSVersion, "new", newMinTLS)
-			newServingInfo := configv1.HTTPServingInfo{
-				ServingInfo: configv1.ServingInfo{
-					MinTLSVersion:    newMinTLS,
-					CipherSuites:     newCiphers,
-					CurvePreferences: newCurvePreferences,
-				},
-			}
-			if err := controller.UpdateMetricsServerConfigFile(metricsConfigFile, newServingInfo); err != nil {
-				klog.Warningf("Failed to update metrics server TLS config file: %v", err)
-			}
+				"old", initialTLSServingInfo.MinTLSVersion, "new", newServingInfo.MinTLSVersion)
 		},
 	}); err != nil {
 		return fmt.Errorf("failed to add operator TLS change event handler: %w", err)
