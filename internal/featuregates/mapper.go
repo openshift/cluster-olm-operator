@@ -74,7 +74,12 @@ func NewMapper() *Mapper {
 			return enableCatalogdFeature(v, enabled, APIV1MetasHandler)
 		},
 		features.FeatureGateNewOLMBoxCutterRuntime: func(v *helmvalues.HelmValues, enabled bool) error {
-			return enableOperatorControllerFeature(v, enabled, BoxCutterRuntime)
+			return errors.Join(
+				enableOperatorControllerFeature(v, enabled, BoxCutterRuntime),
+				// BoxCutter runtime relies on the object-controller, so enable/disable
+				// it in lockstep with the feature gate.
+				v.SetBoolValue("options.objectController.enabled", enabled),
+			)
 		},
 		features.FeatureGateNewOLMConfigAPI: func(v *helmvalues.HelmValues, enabled bool) error {
 			return enableOperatorControllerFeature(v, enabled, DeploymentConfig)

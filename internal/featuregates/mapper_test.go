@@ -166,6 +166,40 @@ func TestMapper_FeatureGateMappings(t *testing.T) {
 			},
 		},
 		{
+			name:           "BoxCutterRuntime enabled",
+			downstreamGate: features.FeatureGateNewOLMBoxCutterRuntime,
+			enabled:        true,
+			expectedValues: map[string]interface{}{
+				"options": map[string]interface{}{
+					"operatorController": map[string]interface{}{
+						"features": map[string]interface{}{
+							"enabled": []interface{}{BoxCutterRuntime},
+						},
+					},
+					"objectController": map[string]interface{}{
+						"enabled": true,
+					},
+				},
+			},
+		},
+		{
+			name:           "BoxCutterRuntime disabled",
+			downstreamGate: features.FeatureGateNewOLMBoxCutterRuntime,
+			enabled:        false,
+			expectedValues: map[string]interface{}{
+				"options": map[string]interface{}{
+					"operatorController": map[string]interface{}{
+						"features": map[string]interface{}{
+							"disabled": []interface{}{BoxCutterRuntime},
+						},
+					},
+					"objectController": map[string]interface{}{
+						"enabled": false,
+					},
+				},
+			},
+		},
+		{
 			name:           "ConfigAPI enabled",
 			downstreamGate: features.FeatureGateNewOLMConfigAPI,
 			enabled:        true,
