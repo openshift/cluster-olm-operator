@@ -6,9 +6,6 @@ GO_BUILD_BINDIR := bin
 .PHONY: all
 all: build
 
-# bingo manages consistent tooling versions for things like kind, kustomize, etc.
-include .bingo/Variables.mk
-
 include $(addprefix ./vendor/github.com/openshift/build-machinery-go/make/, \
     golang.mk \
     targets/openshift/deps.mk \
@@ -23,14 +20,14 @@ clean: ## Remove binaries and test artifacts
 	rm -rf bin
 
 .PHONY: lint
-lint: $(GOLANGCI_LINT) ## Run golangci linter.
-	$(GOLANGCI_LINT) run $(GOLANGCI_LINT_ARGS)
+lint: ## Run golangci linter.
+	go tool golangci-lint run $(GOLANGCI_LINT_ARGS)
 
 HELM_OUTPUT := $(shell mktemp -d)
 export HELM_OUTPUT
 .PHONY: helm-test-output
-helm-test-output: $(HELM)
+helm-test-output:
 	@echo Output helm to $(HELM_OUTPUT)
-	$(HELM) template olmv1 testdata/olmv1 --values testdata/openshift.yaml > $(HELM_OUTPUT)/hello-world.yaml
+	go tool helm template olmv1 testdata/olmv1 --values testdata/openshift.yaml > $(HELM_OUTPUT)/hello-world.yaml
 
 test-unit: helm-test-output
