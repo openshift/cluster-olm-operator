@@ -36,20 +36,10 @@ func (b *Builder) renderHelmTemplate(helmPath, manifestDir string) error {
 		return fmt.Errorf("CurrentFeatureGates failed: %w", err)
 	}
 
-	// Check if any feature gates are enabled (without calling upstreamFeatureGates)
-	hasEnabledFeatureGates, err := b.HasEnabledDownstreamFeatureGates(clusterGatesConfig)
-	if err != nil {
-		return fmt.Errorf("HasEnabledDownstreamFeatureGates failed: %w", err)
-	}
-
-	// Determine if we should use experimental values file based on FeatureSet
-	// OR enabled feature gates. This uses the same logic as the RBAC wait check
-	// in main.go to ensure consistency.
-	useExperimental := b.UseExperimentalFeatureSet() || hasEnabledFeatureGates
-
 	// Determine and generate the values from the files (equivalent to --values)
 	valuesFiles := []string{filepath.Join(helmPath, "openshift.yaml")}
-	if useExperimental {
+	// Determine if we should use experimental values file based on FeatureSet
+	if b.UseExperimentalFeatureSet() {
 		log.Info("Using experimental values")
 		valuesFiles = append(valuesFiles, filepath.Join(helmPath, "experimental.yaml"))
 	} else {
