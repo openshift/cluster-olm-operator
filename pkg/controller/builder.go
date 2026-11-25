@@ -40,6 +40,9 @@ import (
 )
 
 type Builder struct {
+	// RenderedResources is published only after a complete successful build.
+	// Unlike relatedObjects, it contains exact identities for every manifest.
+	RenderedResources   []configv1.ObjectReference
 	Assets              string
 	Clients             *clients.Clients
 	ControllerContext   *controllercmd.ControllerContext
@@ -50,11 +53,13 @@ type Builder struct {
 }
 
 func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory.Controller, map[string]factory.Controller, map[string]factory.Controller, []configv1.ObjectReference, error) {
+	b.RenderedResources = nil
 	var (
 		staticResourceControllers = map[string]factory.Controller{}
 		deploymentControllers     = map[string]factory.Controller{}
 		clusterCatalogControllers = map[string]factory.Controller{}
 		relatedObjects            []configv1.ObjectReference
+		renderedResources         = []configv1.ObjectReference{}
 		errs                      []error
 	)
 	log := klog.FromContext(context.Background()).WithName("BuildControllers")
@@ -97,6 +102,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 				return nil
 			}
 			relatedObjects = append(relatedObjects, *objReference)
+			renderedResources = append(renderedResources, *objReference)
 
 			manifestGVK := manifest.GroupVersionKind()
 
@@ -161,6 +167,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 	if len(errs) > 0 {
 		return nil, nil, nil, nil, fmt.Errorf("error building controllers: %w", errors.Join(errs...))
 	}
+	b.RenderedResources = renderedResources
 	return staticResourceControllers, deploymentControllers, clusterCatalogControllers, relatedObjects, nil
 }
 

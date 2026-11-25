@@ -9,6 +9,27 @@ metadata:
     capability.openshift.io/name: "OperatorLifecycleManagerV1"
 rules:
   - apiGroups:
+      - ""
+    resources:
+      - configmaps
+      - secrets
+    verbs:
+      - delete
+  # Label-based pruning of managed default catalogs and ServiceMonitors.
+  - apiGroups:
+      - olm.operatorframework.io
+    resources:
+      - clustercatalogs
+    verbs:
+      - get
+      - delete
+  - apiGroups:
+      - monitoring.coreos.com
+    resources:
+      - servicemonitors
+    verbs:
+      - delete
+  - apiGroups:
       - networking
     resources:
       - networkpolicies

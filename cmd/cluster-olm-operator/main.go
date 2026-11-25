@@ -463,6 +463,14 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 		clusterCatalogControllerList = append(clusterCatalogControllerList, controller)
 	}
 
+	const pruningControllerName = "OLMManagedResourcePruning"
+	pruner, err := controller.NewPruningController(pruningControllerName, controller.DefaultPruningScopes(), []string{"openshift-catalogd", operatorControllerNamespace}, cb.RenderedResources, cl.OperatorClient, cl.DynamicClient, cc.EventRecorder.ForComponent(pruningControllerName))
+	if err != nil {
+		return err
+	}
+	staticResourceControllerList = append(staticResourceControllerList, pruner)
+	controllerNames = append(controllerNames, pruningControllerName)
+
 	operatorImageVersion := status.VersionForOperatorFromEnv()
 	currentOCPMinorVersion, err := versionutils.GetCurrentOCPMinorVersion(operatorImageVersion)
 	if err != nil {
