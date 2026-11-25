@@ -8,6 +8,14 @@ metadata:
     include.release.openshift.io/self-managed-high-availability: "true"
     capability.openshift.io/name: "OperatorLifecycleManagerV1"
 rules:
+  # Label-based pruning of cluster-scoped managed default catalogs.
+  - apiGroups:
+      - olm.operatorframework.io
+    resources:
+      - clustercatalogs
+    verbs:
+      - get
+      - delete
   - apiGroups:
       - networking
     resources:
@@ -240,6 +248,7 @@ rules:
     - helm-provisioner-admin
     - rukpak-webhooks-admin
     - cluster-admin
+    - cluster-olm-operator-pruning
   - apiGroups:
     - admissionregistration.k8s.io
     resources:

@@ -40,6 +40,11 @@ import (
 )
 
 type Builder struct {
+	PruningNamespaces []string
+	DeploymentApplies *DeploymentApplyBarrier
+	// RenderedResources is published only after a complete successful build.
+	// Unlike relatedObjects, it contains exact identities for every manifest.
+	RenderedResources   []configv1.ObjectReference
 	Assets              string
 	Clients             *clients.Clients
 	ControllerContext   *controllercmd.ControllerContext
@@ -50,11 +55,14 @@ type Builder struct {
 }
 
 func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory.Controller, map[string]factory.Controller, map[string]factory.Controller, []configv1.ObjectReference, error) {
+	b.RenderedResources = nil
+	b.DeploymentApplies = &DeploymentApplyBarrier{}
 	var (
 		staticResourceControllers = map[string]factory.Controller{}
 		deploymentControllers     = map[string]factory.Controller{}
 		clusterCatalogControllers = map[string]factory.Controller{}
 		relatedObjects            []configv1.ObjectReference
+		renderedResources         = []configv1.ObjectReference{}
 		errs                      []error
 	)
 	log := klog.FromContext(context.Background()).WithName("BuildControllers")
@@ -72,10 +80,24 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 			return nil, nil, nil, nil, fmt.Errorf("failed to render Helm template: %w", err)
 		}
 
+		if err := writePruningRBAC(manifestDir, b.PruningNamespaces); err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("building pruning permissions: %w", err)
+		}
+
 		log.Info("Iterating through manifests", "directory", manifestDir)
 
 		if err := WalkYAMLManifestsDir(manifestDir, func(path string, manifest *unstructured.Unstructured, manifestData []byte) error {
 			log.Info("Processing YAML", "file", path)
+
+			// Mark the object itself, rather than pod templates or selectors. Persist
+			// the marked manifest because static resource controllers read it from disk.
+			manifestData, err := markManagedResource(manifest)
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(path, manifestData, 0o644); err != nil {
+				return fmt.Errorf("writing managed manifest %s: %w", path, err)
+			}
 
 			objReference, err := ToObjectReference(manifest, b.Clients.RESTMapper, b.KnownRESTMappings)
 			if err != nil {
@@ -87,6 +109,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 				return nil
 			}
 			relatedObjects = append(relatedObjects, *objReference)
+			renderedResources = append(renderedResources, *objReference)
 
 			manifestGVK := manifest.GroupVersionKind()
 
@@ -96,7 +119,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 					controllerName,
 					manifestData,
 					b.ControllerContext.EventRecorder.ForComponent(controllerName),
-					b.Clients.OperatorClient,
+					b.DeploymentApplies.track(b.Clients.OperatorClient, manifest.GetNamespace(), manifest.GetName()),
 					b.Clients.KubeClient,
 					b.Clients.KubeInformerFactory.Apps().V1().Deployments(),
 					[]factory.Informer{
@@ -151,6 +174,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 	if len(errs) > 0 {
 		return nil, nil, nil, nil, fmt.Errorf("error building controllers: %w", errors.Join(errs...))
 	}
+	b.RenderedResources = renderedResources
 	return staticResourceControllers, deploymentControllers, clusterCatalogControllers, relatedObjects, nil
 }
 
