@@ -23,8 +23,8 @@ type ResourceToDelete struct {
 }
 
 func NewResourceDeletionController(name string, resources []ResourceToDelete, operatorClient *clients.OperatorClient, client dynamic.Interface, recorder events.Recorder) factory.Controller {
-	c := &resourceDeletionController{resources: append([]ResourceToDelete(nil), resources...), client: client, managed: defaultManagedFunc(operatorClient)}
-	return factory.New().WithSync(c.sync).WithSyncDegradedOnError(operatorClient).WithInformers(operatorClient.Informer()).ResyncEvery(time.Minute).ToController(name, recorder)
+	c := &resourceDeletionController{resources: append([]ResourceToDelete(nil), resources...), client: client, managed: cleanupManagedFunc(operatorClient)}
+	return factory.New().WithSync(withCleanupStatus(name, operatorClient, c.sync)).WithSyncDegradedOnError(operatorClient).WithInformers(operatorClient.Informer()).ResyncEvery(time.Minute).ToController(name, recorder)
 }
 
 type resourceDeletionController struct {
@@ -65,7 +65,7 @@ func deleteRetiredResource(ctx context.Context, client dynamic.Interface, ref Re
 		return fmt.Errorf("getting retired resource %s %s/%s: %w", ref.Resource, ref.Namespace, ref.Name, err)
 	}
 	if obj.GetDeletionTimestamp() != nil {
-		return fmt.Errorf("waiting for retired resource %s %s/%s to disappear", ref.Resource, ref.Namespace, ref.Name)
+		return fmt.Errorf("%w: %s %s/%s", errDeletionPending, ref.Resource, ref.Namespace, ref.Name)
 	}
 	uid := obj.GetUID()
 	if uid == "" {
@@ -78,5 +78,5 @@ func deleteRetiredResource(ctx context.Context, client dynamic.Interface, ref Re
 	if err != nil {
 		return fmt.Errorf("deleting retired resource %s: %w", ref.Name, err)
 	}
-	return fmt.Errorf("waiting for deletion of retired resource %s %s/%s", ref.Resource, ref.Namespace, ref.Name)
+	return fmt.Errorf("%w: %s %s/%s", errDeletionPending, ref.Resource, ref.Namespace, ref.Name)
 }
