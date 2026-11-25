@@ -77,6 +77,16 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 		if err := WalkYAMLManifestsDir(manifestDir, func(path string, manifest *unstructured.Unstructured, manifestData []byte) error {
 			log.Info("Processing YAML", "file", path)
 
+			// Mark the object itself, rather than pod templates or selectors. Persist
+			// the marked manifest because static resource controllers read it from disk.
+			manifestData, err := markManagedResource(manifest)
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(path, manifestData, 0o644); err != nil {
+				return fmt.Errorf("writing managed manifest %s: %w", path, err)
+			}
+
 			objReference, err := ToObjectReference(manifest, b.Clients.RESTMapper, b.KnownRESTMappings)
 			if err != nil {
 				return fmt.Errorf("failed gvk lookup for file %s: %w", path, err)
