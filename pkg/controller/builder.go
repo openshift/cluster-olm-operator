@@ -86,7 +86,11 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 				// empty manifest, ignore
 				return nil
 			}
-			relatedObjects = append(relatedObjects, *objReference)
+			// Resources reported by group/resource for all instances (e.g. ClusterCatalogs) are
+			// appended once below, so a named reference per rendered manifest would be redundant.
+			if !coveredByAllInstancesRelatedObject(*objReference) {
+				relatedObjects = append(relatedObjects, *objReference)
+			}
 
 			manifestGVK := manifest.GroupVersionKind()
 
@@ -151,7 +155,37 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 	if len(errs) > 0 {
 		return nil, nil, nil, nil, fmt.Errorf("error building controllers: %w", errors.Join(errs...))
 	}
+	relatedObjects = append(relatedObjects, allInstancesRelatedObjects()...)
 	return staticResourceControllers, deploymentControllers, clusterCatalogControllers, relatedObjects, nil
+}
+
+// allInstancesRelatedObjects returns group/resource-only references (no name or namespace) for the
+// OLM APIs whose instances cluster-olm-operator lists and watches cluster-wide, independent of which
+// manifests were rendered:
+//   - ClusterCatalogs: the ClusterCatalog controllers share an informer over every ClusterCatalog.
+//   - ClusterExtensions: the incompatible operator controller lists every ClusterExtension.
+//
+// An empty name makes must-gather (oc adm inspect) collect every instance of the resource, including
+// user-created ones, rather than only the default catalogs rendered from the Helm chart. Their specs
+// reference content (catalog images, packages, service accounts) and hold bundle configuration; they
+// do not embed object manifests.
+//
+// ClusterObjectSets are intentionally not included even though the incompatible operator controller
+// lists them when the BoxCutter runtime is enabled: their spec can embed arbitrary object manifests
+// inline, including Secrets, and inspect only redacts the data of Secret resources.
+func allInstancesRelatedObjects() []configv1.ObjectReference {
+	return []configv1.ObjectReference{
+		{Group: ocv1.GroupVersion.Group, Resource: "clustercatalogs"},
+		{Group: ocv1.GroupVersion.Group, Resource: "clusterextensions"},
+	}
+}
+
+// coveredByAllInstancesRelatedObject reports whether ref's group/resource is already reported for
+// all instances by allInstancesRelatedObjects.
+func coveredByAllInstancesRelatedObject(ref configv1.ObjectReference) bool {
+	return slices.ContainsFunc(allInstancesRelatedObjects(), func(o configv1.ObjectReference) bool {
+		return o.Group == ref.Group && o.Resource == ref.Resource
+	})
 }
 
 func (b *Builder) UseExperimentalFeatureSet() bool {

@@ -1,11 +1,19 @@
 package controller
 
 import (
+	"maps"
+	"os"
+	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
+	"github.com/openshift/library-go/pkg/controller/controllercmd"
+	"github.com/openshift/library-go/pkg/operator/events"
+	ocv1 "github.com/operator-framework/operator-controller/api/v1"
+	"github.com/stretchr/testify/require"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -15,6 +23,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/rest"
+	"k8s.io/utils/clock"
+
+	"github.com/openshift/cluster-olm-operator/pkg/clients"
 )
 
 func TestControllerNameForObject(t *testing.T) {
@@ -217,4 +229,187 @@ func TestWalkYAMLManifestsDir(t *testing.T) {
 			t.Errorf("expected %+v, got %+v", expectedRefs, actualRefs)
 		}
 	})
+}
+
+func TestBuildControllersRelatedObjects(t *testing.T) {
+	const (
+		catalogdServiceAccount = `apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: catalogd-controller-manager
+  namespace: openshift-catalogd
+`
+		operatorControllerServiceAccount = `apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: operator-controller-controller-manager
+  namespace: openshift-operator-controller
+`
+		objectControllerServiceAccount = `apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: object-controller-controller-manager
+  namespace: openshift-operator-controller
+`
+	)
+	clusterCatalog := func(name string) string {
+		return `apiVersion: olm.operatorframework.io/v1
+kind: ClusterCatalog
+metadata:
+  name: ` + name + `
+spec:
+  source:
+    type: Image
+    image:
+      ref: example.com/catalogs/` + name + `:latest
+`
+	}
+
+	// Named references for rendered non-ClusterCatalog resources are retained (the operator relies
+	// on the rendered ServiceAccounts at startup), while ClusterCatalogs and ClusterExtensions are
+	// reported once each by group/resource only, so must-gather collects every instance.
+	expectedRelatedObjects := []configv1.ObjectReference{
+		{Resource: "serviceaccounts", Namespace: "openshift-catalogd", Name: "catalogd-controller-manager"},
+		{Resource: "serviceaccounts", Namespace: "openshift-operator-controller", Name: "object-controller-controller-manager"},
+		{Resource: "serviceaccounts", Namespace: "openshift-operator-controller", Name: "operator-controller-controller-manager"},
+		{Group: "olm.operatorframework.io", Resource: "clustercatalogs"},
+		{Group: "olm.operatorframework.io", Resource: "clusterextensions"},
+	}
+
+	for _, tc := range []struct {
+		name                       string
+		catalogdTemplates          map[string]string
+		expectedCatalogControllers []string
+	}{
+		{
+			name: "rendered default ClusterCatalogs are reported by group/resource only",
+			catalogdTemplates: map[string]string{
+				"serviceaccount.yaml":           catalogdServiceAccount,
+				"clustercatalog-community.yaml": clusterCatalog("openshift-community-operators"),
+				"clustercatalog-redhat.yaml":    clusterCatalog("openshift-redhat-operators"),
+			},
+			expectedCatalogControllers: []string{
+				"CatalogdClusterCatalogOpenshiftCommunityOperators",
+				"CatalogdClusterCatalogOpenshiftRedhatOperators",
+			},
+		},
+		{
+			name: "ClusterCatalogs are reported without rendered ClusterCatalog manifests",
+			catalogdTemplates: map[string]string{
+				"serviceaccount.yaml": catalogdServiceAccount,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assets := t.TempDir()
+			writeTestHelmChart(t, filepath.Join(assets, "helm", "catalogd"), tc.catalogdTemplates)
+			writeTestHelmChart(t, filepath.Join(assets, "helm", "operator-controller"), map[string]string{
+				"serviceaccount-object-controller.yaml":   objectControllerServiceAccount,
+				"serviceaccount-operator-controller.yaml": operatorControllerServiceAccount,
+			})
+
+			b := newTestBuilder(t, assets)
+			staticResourceControllers, deploymentControllers, clusterCatalogControllers, relatedObjects, err := b.BuildControllers("catalogd", "operator-controller")
+			require.NoError(t, err)
+
+			require.Equal(t, expectedRelatedObjects, relatedObjects)
+
+			// Reconciliation of the rendered ClusterCatalogs and static resources is unchanged.
+			require.ElementsMatch(t, tc.expectedCatalogControllers, slices.Collect(maps.Keys(clusterCatalogControllers)))
+			require.Contains(t, staticResourceControllers, "CatalogdStaticResources")
+			require.Contains(t, staticResourceControllers, "OperatorControllerStaticResources")
+			require.Empty(t, deploymentControllers)
+		})
+	}
+}
+
+func TestCoveredByAllInstancesRelatedObject(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		ref      configv1.ObjectReference
+		expected bool
+	}{
+		{
+			name:     "named ClusterCatalog",
+			ref:      configv1.ObjectReference{Group: "olm.operatorframework.io", Resource: "clustercatalogs", Name: "openshift-redhat-operators"},
+			expected: true,
+		},
+		{
+			name:     "named ClusterExtension",
+			ref:      configv1.ObjectReference{Group: "olm.operatorframework.io", Resource: "clusterextensions", Name: "my-extension"},
+			expected: true,
+		},
+		{
+			name:     "ClusterObjectSet",
+			ref:      configv1.ObjectReference{Group: "olm.operatorframework.io", Resource: "clusterobjectsets", Name: "my-extension-1"},
+			expected: false,
+		},
+		{
+			name:     "ClusterCatalog CustomResourceDefinition",
+			ref:      configv1.ObjectReference{Group: "apiextensions.k8s.io", Resource: "customresourcedefinitions", Name: "clustercatalogs.olm.operatorframework.io"},
+			expected: false,
+		},
+		{
+			name:     "ServiceAccount",
+			ref:      configv1.ObjectReference{Resource: "serviceaccounts", Namespace: "openshift-operator-controller", Name: "operator-controller-controller-manager"},
+			expected: false,
+		},
+		{
+			name:     "Secret",
+			ref:      configv1.ObjectReference{Resource: "secrets", Namespace: "openshift-operator-controller", Name: "some-secret"},
+			expected: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, coveredByAllInstancesRelatedObject(tc.ref))
+		})
+	}
+}
+
+// writeTestHelmChart writes a minimal chart in the layout renderHelmTemplate expects:
+// ${dir}/olmv1/ holds the chart and ${dir}/openshift.yaml is the primary values file.
+func writeTestHelmChart(t *testing.T, dir string, templates map[string]string) {
+	t.Helper()
+	templatesDir := filepath.Join(dir, "olmv1", "templates")
+	require.NoError(t, os.MkdirAll(templatesDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "olmv1", "Chart.yaml"), []byte("apiVersion: v2\nname: olmv1\nversion: 0.0.1\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "openshift.yaml"), []byte("{}\n"), 0o600))
+	for name, content := range templates {
+		require.NoError(t, os.WriteFile(filepath.Join(templatesDir, name), []byte(content), 0o600))
+	}
+}
+
+// newTestBuilder returns a Builder whose clients are never used to contact an API server while
+// building controllers: REST mappings for the rendered kinds are provided up front.
+func newTestBuilder(t *testing.T, assets string) *Builder {
+	t.Helper()
+	restConfig := &rest.Config{Host: "https://127.0.0.1:1"}
+	cc := &controllercmd.ControllerContext{
+		KubeConfig:        restConfig,
+		ProtoKubeConfig:   restConfig,
+		EventRecorder:     events.NewInMemoryRecorder("test", clock.RealClock{}),
+		OperatorNamespace: "openshift-cluster-olm-operator",
+	}
+	cl, err := clients.New(cc)
+	require.NoError(t, err)
+
+	clusterCatalogGVK := ocv1.GroupVersion.WithKind("ClusterCatalog")
+	serviceAccountGVK := corev1.SchemeGroupVersion.WithKind("ServiceAccount")
+	return &Builder{
+		Assets:            assets,
+		Clients:           cl,
+		ControllerContext: cc,
+		KnownRESTMappings: map[schema.GroupVersionKind]*meta.RESTMapping{
+			clusterCatalogGVK: {
+				Resource:         ocv1.GroupVersion.WithResource("clustercatalogs"),
+				GroupVersionKind: clusterCatalogGVK,
+				Scope:            meta.RESTScopeRoot,
+			},
+			serviceAccountGVK: {
+				Resource:         corev1.SchemeGroupVersion.WithResource("serviceaccounts"),
+				GroupVersionKind: serviceAccountGVK,
+				Scope:            meta.RESTScopeNamespace,
+			},
+		},
+	}
 }
