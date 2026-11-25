@@ -2,8 +2,10 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -44,6 +46,37 @@ func TestResourceDeletionController(t *testing.T) {
 				return
 			}
 			require.NoError(t, c.sync(context.Background(), nil))
+		})
+	}
+}
+
+func TestRetirementsContinuePastPendingEntry(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "olm.operatorframework.io", Version: "v1", Resource: "clustercatalogs"}
+	for _, failSecond := range []bool{false, true} {
+		t.Run(fmt.Sprintf("second API failure=%t", failSecond), func(t *testing.T) {
+			first := &unstructured.Unstructured{Object: map[string]interface{}{"apiVersion": "olm.operatorframework.io/v1", "kind": "ClusterCatalog", "metadata": map[string]interface{}{"name": "first", "uid": "first"}}}
+			now := metav1.Now()
+			first.SetDeletionTimestamp(&now)
+			first.SetFinalizers([]string{"test/finalizer"})
+			second := first.DeepCopy()
+			second.SetName("second")
+			second.SetUID("second")
+			second.SetDeletionTimestamp(nil)
+			second.SetFinalizers(nil)
+			client := fake.NewSimpleDynamicClient(runtime.NewScheme(), first, second)
+			if failSecond {
+				client.PrependReactor("delete", "clustercatalogs", func(ktesting.Action) (bool, runtime.Object, error) { return true, nil, fmt.Errorf("delete forbidden") })
+			}
+			c := resourceDeletionController{resources: []ResourceToDelete{{Resource: gvr, Name: "first"}, {Resource: gvr, Name: "second"}}, client: client, managed: func() (bool, error) { return true, nil }}
+			err := c.sync(context.Background(), nil)
+			if failSecond {
+				require.ErrorContains(t, err, "delete forbidden")
+				require.NotErrorIs(t, err, errDeletionPending)
+			} else {
+				require.ErrorIs(t, err, errDeletionPending)
+				_, err = client.Resource(gvr).Get(context.Background(), "second", metav1.GetOptions{})
+				require.True(t, apierrors.IsNotFound(err))
+			}
 		})
 	}
 }

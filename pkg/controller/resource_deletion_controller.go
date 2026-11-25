@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -41,15 +42,20 @@ func (c *resourceDeletionController) sync(ctx context.Context, _ factory.SyncCon
 	if !managed {
 		return nil
 	}
+	var pending error
 	for _, ref := range c.resources {
 		if ref.Name == "" || ref.Resource.Resource == "" || ref.Resource.Version == "" {
 			return fmt.Errorf("invalid resource retirement reference: %+v", ref)
 		}
 		if err := deleteRetiredResource(ctx, c.client, ref); err != nil {
+			if errors.Is(err, errDeletionPending) {
+				pending = err
+				continue
+			}
 			return err
 		}
 	}
-	return nil
+	return pending
 }
 
 func deleteRetiredResource(ctx context.Context, client dynamic.Interface, ref ResourceToDelete) error {
