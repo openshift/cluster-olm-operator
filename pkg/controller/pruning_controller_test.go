@@ -60,17 +60,20 @@ func TestPruningOwnershipAndScope(t *testing.T) {
 
 func TestPruningRejectsUnsafeConfiguration(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		scope      PruningScope
-		namespaces []string
+		name          string
+		scope         PruningScope
+		namespaces    []string
+		expectedError string
 	}{
-		{name: "empty namespace", namespaces: []string{""}},
-		{name: "namespace deletion", scope: PruningScope{Resource: schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}}},
-		{name: "CRD deletion", scope: PruningScope{Resource: schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}}},
+		{name: "empty namespace", scope: PruningScope{Resource: schema.GroupVersionResource{Version: "v1", Resource: "services"}, Namespaced: true}, namespaces: []string{""}, expectedError: "pruning namespace must not be empty"},
+		{name: "namespace deletion", scope: PruningScope{Resource: schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}}, expectedError: "pruning namespaces and CRDs is prohibited"},
+		{name: "CRD deletion", scope: PruningScope{Resource: schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}}, expectedError: "pruning namespaces and CRDs is prohibited"},
+		{name: "missing API version", scope: PruningScope{Resource: schema.GroupVersionResource{Resource: "services"}}, expectedError: "invalid pruning scope"},
+		{name: "missing API resource", scope: PruningScope{Resource: schema.GroupVersionResource{Version: "v1"}}, expectedError: "invalid pruning scope"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := NewPruningController("test", []PruningScope{tc.scope}, tc.namespaces, []configv1.ObjectReference{}, nil, nil, nil, nil)
-			require.Error(t, err)
+			_, err := NewPruningController("test", []PruningScope{tc.scope}, tc.namespaces, []configv1.ObjectReference{}, nil, nil, nil, &DeploymentApplyBarrier{})
+			require.ErrorContains(t, err, tc.expectedError)
 		})
 	}
 	_, err := NewPruningController("test", nil, nil, nil, nil, nil, nil, nil)

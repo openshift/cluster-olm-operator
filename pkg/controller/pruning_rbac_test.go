@@ -3,6 +3,8 @@ package controller
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -39,4 +41,25 @@ func TestPruningRBACStaysInConfiguredOperandNamespaces(t *testing.T) {
 	}))
 	require.Equal(t, 2, roles)
 	require.Equal(t, 2, bindings)
+}
+
+func TestOperatorMayBindPruningRoleWithoutClusterWideDelete(t *testing.T) {
+	_, source, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(source), "../../manifests/0000_51_olm_02_operator_clusterrole.yaml"))
+	require.NoError(t, err)
+	var role rbacv1.ClusterRole
+	require.NoError(t, yaml.Unmarshal(data, &role))
+	mayBind := false
+	for _, rule := range role.Rules {
+		if slices.Contains(rule.APIGroups, rbacv1.GroupName) && slices.Contains(rule.Resources, "roles") && slices.Contains(rule.Verbs, "bind") && slices.Contains(rule.ResourceNames, "cluster-olm-operator-pruning") {
+			mayBind = true
+		}
+		if slices.Contains(rule.Verbs, "delete") {
+			for _, resource := range []string{"configmaps", "secrets", "servicemonitors"} {
+				require.NotContains(t, rule.Resources, resource, "pruning deletion must be namespaced")
+			}
+		}
+	}
+	require.True(t, mayBind, "operator must be authorized to bind its generated pruning Role")
 }

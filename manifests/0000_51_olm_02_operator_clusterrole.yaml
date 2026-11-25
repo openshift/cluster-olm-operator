@@ -248,6 +248,7 @@ rules:
     - helm-provisioner-admin
     - rukpak-webhooks-admin
     - cluster-admin
+    - cluster-olm-operator-pruning
   - apiGroups:
     - admissionregistration.k8s.io
     resources:
