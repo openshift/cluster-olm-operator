@@ -23,13 +23,20 @@ inventory. The controller polls once per minute, with shorter retries while
 cleanup is pending, and adds no resource watches. The caller supplies the
 namespaces; production uses `openshift-catalogd` and
 `openshift-operator-controller`. Cluster-scoped resources are listed separately.
+Supplemental Roles and RoleBindings
+grant ConfigMap, Secret and ServiceMonitor deletion only in those operand
+namespaces; those delete permissions are not granted cluster-wide.
 The explicit resource-type scopes remain configured after a kind disappears
 from the chart. Add new types to `DefaultPruningScopes` with corresponding RBAC.
 Namespaces, CRDs, ClusterExtensions and ClusterObjectSets are retained.
 
 Pruning acts only in Managed state. Deletes use UID and resourceVersion
-preconditions to protect concurrent ownership changes. Pending deletion reports Progressing and respects finalizers; API errors
-report Degraded. Catalog cleanup completes before pruning operand deployments.
+preconditions to protect concurrent ownership changes. Pending deletion reports
+Progressing and respects finalizers; API errors report Degraded. Pruning waits
+for every rendered Deployment to complete a successful apply in
+the current operator process. Controller startup and status from an earlier
+process cannot release this barrier. Managed catalog cleanup then completes
+before pruning operand deployments.
 An unavailable API stops pruning rather than being interpreted as an empty list.
 
 The ownership-marking commit can be backported independently of pruning.

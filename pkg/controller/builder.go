@@ -40,6 +40,8 @@ import (
 )
 
 type Builder struct {
+	PruningNamespaces []string
+	DeploymentApplies *DeploymentApplyBarrier
 	// RenderedResources is published only after a complete successful build.
 	// Unlike relatedObjects, it contains exact identities for every manifest.
 	RenderedResources   []configv1.ObjectReference
@@ -54,6 +56,7 @@ type Builder struct {
 
 func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory.Controller, map[string]factory.Controller, map[string]factory.Controller, []configv1.ObjectReference, error) {
 	b.RenderedResources = nil
+	b.DeploymentApplies = &DeploymentApplyBarrier{}
 	var (
 		staticResourceControllers = map[string]factory.Controller{}
 		deploymentControllers     = map[string]factory.Controller{}
@@ -75,6 +78,10 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 		manifestDir := filepath.Join(b.Assets, subDirectory)
 		if err := b.renderHelmTemplate(sourceDir, manifestDir); err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("failed to render Helm template: %w", err)
+		}
+
+		if err := writePruningRBAC(manifestDir, b.PruningNamespaces); err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("building pruning permissions: %w", err)
 		}
 
 		log.Info("Iterating through manifests", "directory", manifestDir)
@@ -112,7 +119,7 @@ func (b *Builder) BuildControllers(subDirectories ...string) (map[string]factory
 					controllerName,
 					manifestData,
 					b.ControllerContext.EventRecorder.ForComponent(controllerName),
-					b.Clients.OperatorClient,
+					b.DeploymentApplies.track(b.Clients.OperatorClient, manifest.GetNamespace(), manifest.GetName()),
 					b.Clients.KubeClient,
 					b.Clients.KubeInformerFactory.Apps().V1().Deployments(),
 					[]factory.Informer{

@@ -431,6 +431,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 	}
 	cb.ClusterFeatureGates = currentFeatureGates
 
+	cb.PruningNamespaces = []string{"openshift-catalogd", operatorControllerNamespace}
 	staticResourceControllers, deploymentControllers, clusterCatalogControllers, relatedObjects, err := cb.BuildControllers("catalogd", "operator-controller")
 	if err != nil {
 		return err
@@ -464,7 +465,7 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 	}
 
 	const pruningControllerName = "OLMManagedResourcePruning"
-	pruner, err := controller.NewPruningController(pruningControllerName, controller.DefaultPruningScopes(), []string{"openshift-catalogd", operatorControllerNamespace}, cb.RenderedResources, cl.OperatorClient, cl.DynamicClient, cc.EventRecorder.ForComponent(pruningControllerName))
+	pruner, err := controller.NewPruningController(pruningControllerName, controller.DefaultPruningScopes(), cb.PruningNamespaces, cb.RenderedResources, cl.OperatorClient, cl.DynamicClient, cc.EventRecorder.ForComponent(pruningControllerName), cb.DeploymentApplies)
 	if err != nil {
 		return err
 	}

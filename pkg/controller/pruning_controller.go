@@ -30,12 +30,13 @@ type pruningController struct {
 	scopes     []PruningScope
 	namespaces []string
 	desired    map[resourceIdentity]struct{}
+	applied    func() bool
 }
 
 // NewPruningController requires a complete desired set from a successful build.
 // Diagnostic relatedObjects must never be passed as the desired set. Polling
 // bounds API usage to these resource types and namespaces without new watches.
-func NewPruningController(name string, scopes []PruningScope, namespaces []string, desired []configv1.ObjectReference, operatorClient *clients.OperatorClient, client dynamic.Interface, recorder events.Recorder) (factory.Controller, error) {
+func NewPruningController(name string, scopes []PruningScope, namespaces []string, desired []configv1.ObjectReference, operatorClient *clients.OperatorClient, client dynamic.Interface, recorder events.Recorder, applies *DeploymentApplyBarrier) (factory.Controller, error) {
 	if desired == nil {
 		return nil, fmt.Errorf("pruning requires a complete rendered resource set")
 	}
@@ -52,7 +53,10 @@ func NewPruningController(name string, scopes []PruningScope, namespaces []strin
 			return nil, fmt.Errorf("pruning namespaces and CRDs is prohibited")
 		}
 	}
-	c := &pruningController{client: client, managed: cleanupManagedFunc(operatorClient), scopes: append([]PruningScope(nil), scopes...), namespaces: append([]string(nil), namespaces...), desired: map[resourceIdentity]struct{}{}}
+	if applies == nil {
+		return nil, fmt.Errorf("pruning requires a Deployment apply barrier")
+	}
+	c := &pruningController{applied: applies.Ready, client: client, managed: cleanupManagedFunc(operatorClient), scopes: append([]PruningScope(nil), scopes...), namespaces: append([]string(nil), namespaces...), desired: map[resourceIdentity]struct{}{}}
 	for _, d := range desired {
 		c.desired[resourceIdentity{d.Group, d.Resource, d.Namespace, d.Name}] = struct{}{}
 	}
@@ -66,6 +70,9 @@ func (c *pruningController) sync(ctx context.Context, _ factory.SyncContext) err
 	}
 	if !managed {
 		return nil
+	}
+	if !c.applied() {
+		return fmt.Errorf("%w: waiting for rendered Deployments to be applied", errDeletionPending)
 	}
 	// Process scopes in order. Pending custom-resource finalizers stop cleanup
 	// before the deployments responsible for completing those finalizers disappear.
