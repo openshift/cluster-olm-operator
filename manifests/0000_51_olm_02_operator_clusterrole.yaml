@@ -8,6 +8,17 @@ metadata:
     include.release.openshift.io/self-managed-high-availability: "true"
     capability.openshift.io/name: "OperatorLifecycleManagerV1"
 rules:
+  # Explicit cleanup of the retired default catalog, including legacy objects
+  # that predate cluster-olm-operator ownership labels.
+  - apiGroups:
+      - olm.operatorframework.io
+    resources:
+      - clustercatalogs
+    resourceNames:
+      - openshift-redhat-marketplace
+    verbs:
+      - get
+      - delete
   - apiGroups:
       - networking
     resources:

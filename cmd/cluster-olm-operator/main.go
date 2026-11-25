@@ -463,6 +463,23 @@ func runOperator(ctx context.Context, cc *controllercmd.ControllerContext, metri
 		clusterCatalogControllerList = append(clusterCatalogControllerList, controller)
 	}
 
+	// Retain retirement instructions across releases so skipped upgrades also
+	// remove resources created before ownership labels were introduced.
+	retiredResources := []controller.ResourceToDelete{{
+		Resource: ocv1.GroupVersion.WithResource("clustercatalogs"),
+		Name:     "openshift-redhat-marketplace",
+	}}
+	for _, retired := range retiredResources {
+		for _, desired := range cb.RenderedResources {
+			if retired.Resource.Group == desired.Group && retired.Resource.Resource == desired.Resource && retired.Namespace == desired.Namespace && retired.Name == desired.Name {
+				return fmt.Errorf("retired resource %s is still rendered", retired.Name)
+			}
+		}
+	}
+	const deletionControllerName = "OLMRetiredResourceDeletion"
+	staticResourceControllerList = append(staticResourceControllerList, controller.NewResourceDeletionController(deletionControllerName, retiredResources, cl.OperatorClient, cl.DynamicClient, cc.EventRecorder.ForComponent(deletionControllerName)))
+	controllerNames = append(controllerNames, deletionControllerName)
+
 	operatorImageVersion := status.VersionForOperatorFromEnv()
 	currentOCPMinorVersion, err := versionutils.GetCurrentOCPMinorVersion(operatorImageVersion)
 	if err != nil {
