@@ -378,9 +378,10 @@ func waitForOLMv1ComponentsRBAC(ctx context.Context, cl *clients.Clients, relate
 }
 
 // objectControllerRendered reports whether the Helm render produced the object-controller
-// ServiceAccount in operatorControllerNamespace. relatedObjects contains an ObjectReference for
-// every rendered manifest, so this reflects what the operator-controller image's chart actually
-// ships rather than what a feature gate implies.
+// ServiceAccount in operatorControllerNamespace. relatedObjects contains a named ObjectReference for
+// every rendered manifest (other than ClusterCatalogs, which are reported once for all instances),
+// so this reflects what the operator-controller image's chart actually ships rather than what a
+// feature gate implies.
 func objectControllerRendered(relatedObjects []configv1.ObjectReference) bool {
 	for _, ref := range relatedObjects {
 		if ref.Resource == "serviceaccounts" && ref.Namespace == operatorControllerNamespace && ref.Name == objectControllerServiceAccount {

@@ -233,6 +233,7 @@ The operator configures related objects in the ClusterOperator status to ensure 
 - The `olms.operator.openshift.io` custom resource (named `cluster`)
 - The `openshift-cluster-olm-operator` namespace
 - All deployed OLMv1 components (catalogd, operator-controller, etc.)
+- Every `ClusterCatalog` and `ClusterExtension` (`olm.operatorframework.io`), reported by group/resource without a name so that all instances, including user-created ones, are collected (pkg/controller/builder.go `allInstancesRelatedObjects`). `ClusterObjectSet`s are intentionally excluded because they can embed object manifests, including Secrets, inline
 
 ## Dependencies
 
